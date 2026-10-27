@@ -118,8 +118,10 @@ remote is rejected when:
 - the workspace or slug is empty or outside the character set.
 
 The scp-style `git@bitbucket.org:workspace/repo.git` form goes through the same
-path checks. A remote that is rejected is never used to fill in `--workspace` or
-`--repo`.
+path checks. When the URL comes from `git remote get-url`, only git's line
+terminator (`\n` or `\r\n`) is removed before parsing, so a tab or space at
+either end of the value is still seen by those checks. A remote that is
+rejected is never used to fill in `--workspace` or `--repo`.
 
 ## Limitations
 
@@ -188,7 +190,9 @@ Git remote (`crates/cli/src/commands/bitbucket/git.rs`):
 - names containing `?`, `#`, `%`, a space, a backslash or `+`, and dot segments,
   are discarded for SSH and HTTPS;
 - HTTPS and SSH remotes with a raw `?` or `#`, a query or fragment, `/./` or
-  `/../` in any position, a backslash, or a tab or newline are discarded.
+  `/../` in any position, a backslash, or a tab or newline are discarded;
+- the line terminator stripping keeps boundary tabs and spaces, so a printed
+  remote with a leading or trailing tab or space is discarded end to end.
 
 Request targets (one `path_encoding_tests.rs` module per product, wiremock, the
 received path is asserted, not just the helper output):

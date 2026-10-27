@@ -42,11 +42,12 @@ fn try_remote(name: &str) -> Option<GitContext> {
     if !output.status.success() {
         return None;
     }
-    let url = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let url = strip_git_output_newline(&stdout);
     if url.is_empty() {
         return None;
     }
-    let (workspace, repo_slug) = parse_git_remote(&url)?;
+    let (workspace, repo_slug) = parse_git_remote(url)?;
     tracing::debug!(
         workspace = %workspace,
         repo_slug = %repo_slug,
@@ -57,6 +58,17 @@ fn try_remote(name: &str) -> Option<GitContext> {
         workspace: Some(workspace),
         repo_slug: Some(repo_slug),
     })
+}
+
+/// Remove only the line terminator git appends to a value it prints: one
+/// trailing `\n` or `\r\n`. Other leading or trailing whitespace, tabs and
+/// control characters are part of the value and are left for
+/// `parse_git_remote` to refuse, so trimming cannot hide them.
+fn strip_git_output_newline(output: &str) -> &str {
+    output
+        .strip_suffix("\r\n")
+        .or_else(|| output.strip_suffix('\n'))
+        .unwrap_or(output)
 }
 
 /// Get all git remote names (deduplicated)
@@ -468,6 +480,58 @@ mod tests {
             "https://bitbucket.org:443/w/r.git",
         ] {
             assert_eq!(parse_git_remote(remote), expected, "{remote}");
+        }
+    }
+
+    #[test]
+    fn test_strip_git_output_newline_removes_only_the_line_terminator() {
+        assert_eq!(strip_git_output_newline("a\n"), "a");
+        assert_eq!(strip_git_output_newline("a\r\n"), "a");
+        assert_eq!(strip_git_output_newline("a"), "a");
+        assert_eq!(strip_git_output_newline(""), "");
+        // Not framing: kept, so the parser can refuse them.
+        assert_eq!(strip_git_output_newline("a\r"), "a\r");
+        assert_eq!(strip_git_output_newline("a\n\n"), "a\n");
+        assert_eq!(strip_git_output_newline("\ta\n"), "\ta");
+        assert_eq!(strip_git_output_newline("a\t\n"), "a\t");
+        assert_eq!(strip_git_output_newline(" a\n"), " a");
+    }
+
+    /// What `git remote get-url` prints, end to end: framing is removed and
+    /// the rest reaches the parser unchanged.
+    #[test]
+    fn test_git_output_is_detected_after_stripping_the_line_terminator() {
+        let expected = Some(("w".to_string(), "r".to_string()));
+        for printed in [
+            "https://bitbucket.org/w/r.git\n",
+            "https://bitbucket.org/w/r.git\r\n",
+            "git@bitbucket.org:w/r.git\n",
+        ] {
+            assert_eq!(
+                parse_git_remote(strip_git_output_newline(printed)),
+                expected,
+                "{printed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_git_output_with_boundary_whitespace_is_rejected() {
+        for printed in [
+            "\thttps://bitbucket.org/w/r.git\n",
+            "https://bitbucket.org/w/r.git\t\n",
+            " https://bitbucket.org/w/r.git\n",
+            "https://bitbucket.org/w/r.git \n",
+            "https://bitbucket.org/w/r.git\n\n",
+            "https://bitbucket.org/w/r.git\r",
+            "\tgit@bitbucket.org:w/r.git\n",
+            "git@bitbucket.org:w/r.git\t\n",
+        ] {
+            assert_eq!(
+                parse_git_remote(strip_git_output_newline(printed)),
+                None,
+                "{printed:?}"
+            );
         }
     }
 }
