@@ -20,6 +20,9 @@ mod projects;
 pub mod utils;
 mod webhooks;
 
+#[cfg(test)]
+mod path_encoding_tests;
+
 use issues::{CommentVisibility, VisibilityChange};
 use utils::JiraContext;
 

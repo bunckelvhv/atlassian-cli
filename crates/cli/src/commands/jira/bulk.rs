@@ -3,6 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use atlassian_cli_bulk::BulkExecutor;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -100,7 +101,13 @@ pub async fn bulk_transition(
             async move {
                 let payload = json!({ "transition": { "id": transition_id } });
                 let _: Value = client
-                    .post(&format!("/rest/api/3/issue/{key}/transitions"), &payload)
+                    .post(
+                        &format!(
+                            "/rest/api/3/issue/{}/transitions",
+                            encode_path_segment(&key)?
+                        ),
+                        &payload,
+                    )
                     .await
                     .with_context(|| format!("Failed to transition issue {key}"))?;
                 tracing::info!(%key, "Transitioned successfully");
@@ -152,7 +159,10 @@ pub async fn bulk_assign(
             async move {
                 let payload = json!({ "accountId": assignee });
                 let _: Value = client
-                    .put(&format!("/rest/api/3/issue/{key}/assignee"), &payload)
+                    .put(
+                        &format!("/rest/api/3/issue/{}/assignee", encode_path_segment(&key)?),
+                        &payload,
+                    )
                     .await
                     .with_context(|| format!("Failed to assign issue {key}"))?;
                 tracing::info!(%key, %assignee, "Assigned successfully");
@@ -230,7 +240,10 @@ pub async fn bulk_label(
 
                 let payload = json!({ "fields": { "labels": new_labels } });
                 let _: Value = client
-                    .put(&format!("/rest/api/3/issue/{key}"), &payload)
+                    .put(
+                        &format!("/rest/api/3/issue/{}", encode_path_segment(&key)?),
+                        &payload,
+                    )
                     .await
                     .with_context(|| format!("Failed to update labels for {key}"))?;
 
