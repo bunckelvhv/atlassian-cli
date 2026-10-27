@@ -122,20 +122,49 @@ pub fn detect_git_context(preferred_remote: Option<&str>) -> GitContext {
 /// - HTTPS: https://bitbucket.org/{workspace}/{repo}.git
 /// - SSH: git@bitbucket.org:{workspace}/{repo}.git
 pub fn parse_git_remote(url: &str) -> Option<(String, String)> {
+    // The URL parser strips tabs and newlines and trims the ends before it
+    // looks at the input, so those are refused on the raw spelling.
+    if url.chars().any(char::is_control) || url != url.trim() {
+        return reject_remote("control character or surrounding whitespace");
+    }
+
     // Try SSH format first: git@bitbucket.org:workspace/repo.git
-    if url.starts_with("git@bitbucket.org:") {
-        let path = url.strip_prefix("git@bitbucket.org:")?;
+    if let Some(path) = url.strip_prefix("git@bitbucket.org:") {
         return parse_path_segments(path);
     }
 
     // Try HTTPS format: https://bitbucket.org/workspace/repo.git
-    if let Ok(parsed) = Url::parse(url) {
-        if parsed.host_str() == Some("bitbucket.org") {
-            let path = parsed.path().trim_start_matches('/');
-            return parse_path_segments(path);
-        }
+    let parsed = Url::parse(url).ok()?;
+    if parsed.host_str() != Some("bitbucket.org") {
+        return None;
     }
+    // The parser moves `?` and `#` out of the path and normalises dot
+    // segments and backslashes, which would hide them from the name check. The
+    // authority is still read by the parser (user info, port); the path is
+    // validated as it was written.
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return reject_remote("query or fragment in the remote URL");
+    }
+    let Some(path) = raw_path(url) else {
+        return reject_remote("remote URL has no plain path");
+    };
+    parse_path_segments(path.trim_start_matches('/'))
+}
 
+/// The path of `url` as written: everything from the first `/` after the
+/// authority. `None` when the authority ends in anything else (`\`, `?`, `#`)
+/// or the URL has no `//` authority.
+fn raw_path(url: &str) -> Option<&str> {
+    let rest = &url[url.find("://")? + 3..];
+    let end = rest.find(|c: char| matches!(c, '/' | '\\' | '?' | '#'))?;
+    let path = &rest[end..];
+    path.starts_with('/').then_some(path)
+}
+
+/// Log why a remote was ignored. Only a fixed reason is logged, never the URL,
+/// which may carry credentials.
+fn reject_remote(reason: &'static str) -> Option<(String, String)> {
+    tracing::debug!(reason, "Ignoring git remote");
     None
 }
 
@@ -144,27 +173,45 @@ pub fn parse_git_remote(url: &str) -> Option<(String, String)> {
 ///
 /// Both names must use the Bitbucket character set, because the names this
 /// returns are later placed into request paths. Anything else is treated as
-/// "not a Bitbucket remote".
+/// "not a Bitbucket remote". `path` is the path as written in the remote.
 fn parse_path_segments(path: &str) -> Option<(String, String)> {
-    let parts: Vec<&str> = path.split('/').collect();
-    if parts.len() >= 2 {
-        let workspace = parts[0];
-        let repo = parts[1].strip_suffix(".git").unwrap_or(parts[1]);
-
-        if workspace.is_empty() || repo.is_empty() {
-            return None;
-        }
-        if !is_valid_bitbucket_name(workspace) || !is_valid_bitbucket_name(repo) {
-            tracing::debug!(
-                workspace,
-                repo,
-                "Ignoring remote with characters outside the Bitbucket name set"
-            );
-            return None;
-        }
-        return Some((workspace.to_string(), repo.to_string()));
+    if path
+        .chars()
+        .any(|c| matches!(c, '\\' | '?' | '#') || c.is_control())
+    {
+        return reject_remote("path contains a backslash, query, fragment or control character");
     }
-    None
+
+    let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+    if parts.len() < 2 {
+        return reject_remote("remote path has fewer than two segments");
+    }
+
+    // Segments past the second are not used, but a dot segment there would
+    // change the path the remote resolves to.
+    if parts.iter().skip(2).any(|part| is_dot_spelling(part)) {
+        return reject_remote("dot segment in the remote path");
+    }
+
+    let workspace = parts[0];
+    let repo = parts[1].strip_suffix(".git").unwrap_or(parts[1]);
+
+    if workspace.is_empty() || repo.is_empty() {
+        return reject_remote("empty workspace or repository name");
+    }
+    if !is_valid_bitbucket_name(workspace) || !is_valid_bitbucket_name(repo) {
+        return reject_remote("name outside the Bitbucket character set");
+    }
+    Some((workspace.to_string(), repo.to_string()))
+}
+
+/// `.` or `..`, including the percent-encoded spellings the URL parser also
+/// treats as dot segments.
+fn is_dot_spelling(segment: &str) -> bool {
+    matches!(
+        segment.to_ascii_lowercase().as_str(),
+        "." | ".." | "%2e" | "%2e%2e" | ".%2e" | "%2e."
+    )
 }
 
 /// Bitbucket workspace and repository names consist of letters, digits, `-`,
@@ -377,6 +424,50 @@ mod tests {
             "https://bitbucket.org/ws/r+x",
         ] {
             assert_eq!(parse_git_remote(remote), None, "{remote}");
+        }
+    }
+
+    /// The URL parser moves `?` and `#` out of the path and normalises dot
+    /// segments, backslashes and tabs, so the raw spelling has to be checked.
+    #[test]
+    fn test_parse_rejects_remotes_the_url_parser_would_normalise() {
+        for remote in [
+            "https://bitbucket.org/w/r?x.git",
+            "https://bitbucket.org/w/r#x.git",
+            "https://bitbucket.org/w/r.git?x=1",
+            "https://bitbucket.org/w/r.git#frag",
+            "https://bitbucket.org/w/r.git?",
+            "https://bitbucket.org/w/r.git#",
+            "https://bitbucket.org?x/w/r.git",
+            "https://bitbucket.org/w/./r.git",
+            "https://bitbucket.org/./w/r.git",
+            "https://bitbucket.org/w/../r.git",
+            "https://bitbucket.org/w/r/../x.git",
+            "https://bitbucket.org/w/r/./x.git",
+            "https://bitbucket.org/w/r/%2e%2e/x.git",
+            "https://bitbucket.org/w\\r.git",
+            "https://bitbucket.org\\w\\r.git",
+            "https://bitbucket.org/w/r\t.git",
+            "https://bitbucket.org/w/r\n.git",
+            "https://bitbucket.org/w/r%2e.git",
+            "git@bitbucket.org:w/r/../x.git",
+            "git@bitbucket.org:w/r\t.git",
+        ] {
+            assert_eq!(parse_git_remote(remote), None, "{remote:?}");
+        }
+    }
+
+    #[test]
+    fn test_parse_accepts_ports_and_user_info() {
+        let expected = Some(("w".to_string(), "r".to_string()));
+        for remote in [
+            "ssh://git@bitbucket.org:7999/w/r.git",
+            "ssh://git@bitbucket.org/w/r.git",
+            "https://user@bitbucket.org/w/r.git",
+            "https://user:secret@bitbucket.org/w/r.git",
+            "https://bitbucket.org:443/w/r.git",
+        ] {
+            assert_eq!(parse_git_remote(remote), expected, "{remote}");
         }
     }
 }
