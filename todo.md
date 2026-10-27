@@ -3179,3 +3179,31 @@ Changelog promoted to `## [0.12.0] - 2026-10-16` (one entry, the comment visibil
 #170), version bumped in the root manifest and the five internal pins. Minor bump: new flags and
 an observable change (`comments update` without a visibility flag reads before it writes). Shipped: tag `v0.12.0` on `f50e7fe`, 14 release assets, six crates on crates.io, Homebrew
 formula at 0.12.0, downloaded macOS artifact verified. Record: `docs/16102026_release_0_12_0_plan.md`.
+
+## 2026-10-27: jira bulk safety and per-issue transitions (branch `fix/jira-bulk-safety`)
+
+`jira bulk transition`, `assign` and `label` changed every issue a JQL query matched as soon as they
+ran: no preview unless `--dry-run` was passed, no confirmation, and a run without a terminal wrote
+too. `label --action set` without `--labels` sent `labels: []` and cleared every label on every
+match. Separately, `bulk transition` resolved the transition on the first matching issue and sent
+that ID to all issues, although IDs are only unique within one workflow.
+
+### The change
+`crates/cli/src/commands/jira/bulk.rs`: new `AvailableTransition`, `TransitionRequest`
+(`ByName` or `ById`, pinned to the name on the first issue), `ResolvedTransition` and the pure
+`resolve_transition()`; `plan_transitions()` reads each issue's transitions and
+`apply_transitions()` sends only the resolved ones, reports every failure with its key and fails
+the command when any issue was not transitioned. `bulk_transition`, `bulk_assign` and `bulk_label`
+take `execute` and `assume_yes`: listing by default, `confirm_destructive` with the match count
+before the first write. `normalize_labels()` rejects an empty `--labels` for every action.
+`get_transition_id()` is gone. `crates/cli/src/commands/jira/mod.rs`: `--execute`, `--yes` and a
+hidden `--dry-run` (conflicts with `--execute`) on the three commands, `--labels` required.
+README, `docs/examples/jira/bulk-transition.sh` and `project-cleanup.sh` use the new flags.
+CHANGELOG has a breaking Changed bullet and a Fixed bullet. Record: `docs/27102026_jira_bulk_safety.md`.
+
+### Tests
+Unit tests in `bulk.rs` for the resolution rules, the label check, the preview rows and the three
+handlers over wiremock (two workflows where ID 21 is "In Progress" once and "Done" once; no POST or
+PUT without `--execute`). New `crates/cli/tests/jira_bulk_safety_e2e.rs` drives the binary without a
+terminal: refusal of `--execute` without `--yes`, `--execute --yes` writes, the preview output,
+`--labels` validation, `--dry-run` and its conflict with `--execute`.

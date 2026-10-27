@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use super::adf::markdown_to_adf;
 use super::issues::check_field_collisions;
 use super::utils::JiraContext;
-use crate::commands::common::{render_success, ExportFormat, MutationResult};
+use crate::commands::common::{confirm_destructive, render_success, ExportFormat, MutationResult};
 
 /// Build the POST body for a single bulk-import row. Pure, testable.
 pub(crate) fn build_bulk_payload(project: &str, issue: &ImportIssue) -> Result<Value> {
@@ -63,11 +63,17 @@ pub(crate) fn build_bulk_payload(project: &str, issue: &ImportIssue) -> Result<V
 }
 
 // Bulk transition issues
+//
+// Lists the matching issues and the transition each would run by default.
+// `--execute` applies it, after the match count is typed back or `--yes` is
+// given. The transition is resolved per issue before anything is asked or sent,
+// so what is previewed and confirmed is what runs.
 pub async fn bulk_transition(
     ctx: &JiraContext<'_>,
     jql: &str,
     transition: &str,
-    dry_run: bool,
+    execute: bool,
+    assume_yes: bool,
     concurrency: usize,
 ) -> Result<()> {
     // Search for issues
@@ -83,12 +89,33 @@ pub async fn bulk_transition(
     // Transition IDs are only unique within one workflow, so the transition is
     // resolved against each issue's own list, never taken from the first issue.
     let plans = plan_transitions(ctx, &issue_keys, transition, concurrency).await?;
+    let unavailable = plans.iter().filter(|plan| plan.outcome.is_err()).count();
 
-    if dry_run {
-        let rows = transition_rows(&plans);
-        ctx.renderer.render_list(&rows)?;
-        eprintln!("Dry run: no changes were made.");
+    if !execute {
+        ctx.renderer.render_list(&transition_rows(&plans))?;
+        // stderr, so a piped `-f json` listing stays machine-readable.
+        eprintln!(
+            "Listing only. {} issue(s) match, the transition is not available on {unavailable}. \
+             Pass --execute to apply it.",
+            plans.len()
+        );
         return Ok(());
+    }
+
+    // Confirm before the first request, not after some of them have happened.
+    // With nothing to run there is nothing to confirm: the errors are reported.
+    if !assume_yes && unavailable < plans.len() {
+        confirm_destructive(
+            &plans.len().to_string(),
+            &format!(
+                "About to transition {} of {} issue(s) with {transition:?}.\n\
+                 The transition is not available on {unavailable} issue(s), which are skipped \
+                 and reported as errors.\n\
+                 Re-run without --execute to list them first.",
+                plans.len() - unavailable,
+                plans.len()
+            ),
+        )?;
     }
 
     apply_transitions(ctx, plans, concurrency).await?;
@@ -100,12 +127,23 @@ pub async fn bulk_transition(
     )
 }
 
+#[derive(Serialize)]
+struct AssignRow<'a> {
+    key: &'a str,
+    assignee: &'a str,
+    action: &'static str,
+}
+
 // Bulk assign issues
+//
+// Lists the matching issues by default. `--execute` overwrites their assignee,
+// after the match count is typed back or `--yes` is given.
 pub async fn bulk_assign(
     ctx: &JiraContext<'_>,
     jql: &str,
     assignee: &str,
-    dry_run: bool,
+    execute: bool,
+    assume_yes: bool,
     concurrency: usize,
 ) -> Result<()> {
     let issue_keys = search_issue_keys(ctx, jql).await?;
@@ -115,17 +153,39 @@ pub async fn bulk_assign(
         return Ok(());
     }
 
-    println!("Found {} issues to assign", issue_keys.len());
+    eprintln!("Found {} issues to assign", issue_keys.len());
 
-    if dry_run {
-        println!("🔍 Dry run mode - no changes will be made:");
-        for key in &issue_keys {
-            println!("  Would assign {} to {}", key, assignee);
-        }
+    if !execute {
+        let rows: Vec<AssignRow<'_>> = issue_keys
+            .iter()
+            .map(|key| AssignRow {
+                key: key.as_str(),
+                assignee,
+                action: "would assign",
+            })
+            .collect();
+        ctx.renderer.render_list(&rows)?;
+        // stderr, so a piped `-f json` listing stays machine-readable.
+        eprintln!(
+            "Listing only. {} issue(s) match. Pass --execute to assign them.",
+            issue_keys.len()
+        );
         return Ok(());
     }
 
-    let executor = BulkExecutor::new(concurrency, dry_run);
+    if !assume_yes {
+        confirm_destructive(
+            &issue_keys.len().to_string(),
+            &format!(
+                "About to assign {} issue(s) to {assignee}.\n\
+                 Any current assignee is overwritten.\n\
+                 Re-run without --execute to list them first.",
+                issue_keys.len()
+            ),
+        )?;
+    }
+
+    let executor = BulkExecutor::new(concurrency, false);
     let client = ctx.client.clone();
     let assignee = assignee.to_string();
 
@@ -153,14 +213,21 @@ pub async fn bulk_assign(
 }
 
 // Bulk label operations
+//
+// Lists the matching issues by default. `--execute` applies the change, after
+// the match count is typed back or `--yes` is given. At least one label is
+// required for every action, so a missing value cannot turn `set` into "clear
+// all labels".
 pub async fn bulk_label(
     ctx: &JiraContext<'_>,
     jql: &str,
     action: LabelAction,
     labels: Vec<String>,
-    dry_run: bool,
+    execute: bool,
+    assume_yes: bool,
     concurrency: usize,
 ) -> Result<()> {
+    let labels = normalize_labels(labels)?;
     let issue_keys = search_issue_keys(ctx, jql).await?;
 
     if issue_keys.is_empty() {
@@ -168,17 +235,45 @@ pub async fn bulk_label(
         return Ok(());
     }
 
-    println!("Found {} issues to label", issue_keys.len());
+    eprintln!("Found {} issues to label", issue_keys.len());
 
-    if dry_run {
-        println!("🔍 Dry run mode - no changes will be made:");
-        for key in &issue_keys {
-            println!("  Would {:?} labels {:?} on {}", action, labels, key);
-        }
+    if !execute {
+        let joined = labels.join(",");
+        let rows: Vec<LabelRow<'_>> = issue_keys
+            .iter()
+            .map(|key| LabelRow {
+                key: key.as_str(),
+                action: format!("would {} labels", action.verb()),
+                labels: joined.as_str(),
+            })
+            .collect();
+        ctx.renderer.render_list(&rows)?;
+        // stderr, so a piped `-f json` listing stays machine-readable.
+        eprintln!(
+            "Listing only. {} issue(s) match. Pass --execute to apply the change.",
+            issue_keys.len()
+        );
         return Ok(());
     }
 
-    let executor = BulkExecutor::new(concurrency, dry_run);
+    if !assume_yes {
+        let effect = match action {
+            LabelAction::Add | LabelAction::Remove => "",
+            LabelAction::Set => "\nAll other labels on these issues are removed.",
+        };
+        confirm_destructive(
+            &issue_keys.len().to_string(),
+            &format!(
+                "About to {} labels [{}] on {} issue(s).{effect}\n\
+                 Re-run without --execute to list them first.",
+                action.verb(),
+                labels.join(", "),
+                issue_keys.len()
+            ),
+        )?;
+    }
+
+    let executor = BulkExecutor::new(concurrency, false);
     let client = ctx.client.clone();
 
     executor
@@ -697,6 +792,44 @@ pub enum LabelAction {
     Set,
 }
 
+impl LabelAction {
+    fn verb(&self) -> &'static str {
+        match self {
+            Self::Add => "add",
+            Self::Remove => "remove",
+            Self::Set => "set",
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct LabelRow<'a> {
+    key: &'a str,
+    action: String,
+    labels: &'a str,
+}
+
+/// Trim the labels and drop empty values, and refuse an empty result.
+///
+/// `set` with no labels used to send `labels: []`, which clears every label on
+/// every matching issue. That is no longer possible through bulk, for any
+/// action: a mistyped or empty variable must not be able to do it.
+pub(crate) fn normalize_labels(labels: Vec<String>) -> Result<Vec<String>> {
+    let labels: Vec<String> = labels
+        .into_iter()
+        .map(|label| label.trim().to_string())
+        .filter(|label| !label.is_empty())
+        .collect();
+
+    if labels.is_empty() {
+        bail!(
+            "--labels needs at least one non-empty label. \
+             Clearing labels through a bulk operation is not supported."
+        );
+    }
+    Ok(labels)
+}
+
 #[derive(Deserialize)]
 struct IssueWithLabels {
     fields: LabelsField,
@@ -1037,7 +1170,7 @@ mod tests {
         let renderer = OutputRenderer::new(OutputFormat::Json);
         let ctx = jira_ctx(&server, &renderer);
 
-        bulk_transition(&ctx, "project in (A, B)", "In Progress", false, 2)
+        bulk_transition(&ctx, "project in (A, B)", "In Progress", true, true, 2)
             .await
             .unwrap();
 
@@ -1056,7 +1189,7 @@ mod tests {
         let renderer = OutputRenderer::new(OutputFormat::Json);
         let ctx = jira_ctx(&server, &renderer);
 
-        let err = bulk_transition(&ctx, "project in (A, B)", "21", false, 2)
+        let err = bulk_transition(&ctx, "project in (A, B)", "21", true, true, 2)
             .await
             .expect_err("the second issue must be an error");
 
@@ -1079,7 +1212,7 @@ mod tests {
         let renderer = OutputRenderer::new(OutputFormat::Json);
         let ctx = jira_ctx(&server, &renderer);
 
-        let err = bulk_transition(&ctx, "project = X", "Done", false, 2)
+        let err = bulk_transition(&ctx, "project = X", "Done", true, true, 2)
             .await
             .expect_err("an unavailable transition must fail the command");
 
@@ -1107,7 +1240,7 @@ mod tests {
         let renderer = OutputRenderer::new(OutputFormat::Json);
         let ctx = jira_ctx(&server, &renderer);
 
-        let err = bulk_transition(&ctx, "project = X", "Done", false, 2)
+        let err = bulk_transition(&ctx, "project = X", "Done", true, true, 2)
             .await
             .expect_err("the failed lookup must fail the command");
 
@@ -1115,19 +1248,48 @@ mod tests {
         assert_eq!(transition_posts(&server).await.len(), 2);
     }
 
+    /// Without `--execute` the command only previews: what would run on each
+    /// issue is resolved and shown, and nothing is sent.
     #[tokio::test]
-    async fn dry_run_resolves_per_issue_and_sends_no_transition() {
+    async fn transition_lists_by_default_and_sends_no_transition() {
         let server = two_workflow_server().await;
         let renderer = OutputRenderer::new(OutputFormat::Json);
         let ctx = jira_ctx(&server, &renderer);
 
-        bulk_transition(&ctx, "project in (A, B)", "Done", true, 2)
+        bulk_transition(&ctx, "project in (A, B)", "Done", false, false, 2)
             .await
             .unwrap();
 
         assert!(
             transition_posts(&server).await.is_empty(),
-            "a dry run must not transition anything"
+            "listing must not transition anything"
+        );
+    }
+
+    #[test]
+    fn the_preview_shows_transition_and_target_status_per_issue() {
+        let plans = vec![
+            IssuePlan {
+                key: "A-1".into(),
+                outcome: Ok(ResolvedTransition {
+                    id: "31".into(),
+                    name: "Complete".into(),
+                    to_status: Some("Done".into()),
+                }),
+            },
+            IssuePlan {
+                key: "B-1".into(),
+                outcome: Err("B-1: not available".into()),
+            },
+        ];
+        let rows = serde_json::to_value(transition_rows(&plans)).unwrap();
+        assert_eq!(
+            rows,
+            json!([
+                {"key": "A-1", "transition": "Complete", "to_status": "Done",
+                 "action": "would transition"},
+                {"key": "B-1", "transition": "", "to_status": "", "action": "not available"}
+            ])
         );
     }
 
@@ -1149,5 +1311,188 @@ mod tests {
             plans[1].outcome.as_ref().unwrap().to_status.as_deref(),
             Some("Done")
         );
+    }
+
+    /// Path and JSON body of every write received (the search that
+    /// selects the issues is a POST too, and is not a write).
+    async fn writes(server: &MockServer) -> Vec<(String, Value)> {
+        let mut writes: Vec<(String, Value)> = server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|r| {
+                (r.method == wiremock::http::Method::POST
+                    || r.method == wiremock::http::Method::PUT)
+                    && r.url.path() != "/rest/api/3/search/jql"
+            })
+            .map(|r| {
+                (
+                    r.url.path().to_string(),
+                    serde_json::from_slice(&r.body).unwrap_or(Value::Null),
+                )
+            })
+            .collect();
+        writes.sort_by(|a, b| a.0.cmp(&b.0));
+        writes
+    }
+
+    /// Two issues that accept an assignee change and a label update.
+    async fn server_with_writable_issues() -> MockServer {
+        let server = MockServer::start().await;
+        mount_search(&server, &["A-1", "B-1"]).await;
+        for key in ["A-1", "B-1"] {
+            Mock::given(method("PUT"))
+                .and(path_matcher(format!("/rest/api/3/issue/{key}/assignee")))
+                .respond_with(ResponseTemplate::new(204))
+                .mount(&server)
+                .await;
+            Mock::given(method("GET"))
+                .and(path_matcher(format!("/rest/api/3/issue/{key}")))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(json!({ "fields": { "labels": ["old"] } })),
+                )
+                .mount(&server)
+                .await;
+            Mock::given(method("PUT"))
+                .and(path_matcher(format!("/rest/api/3/issue/{key}")))
+                .respond_with(ResponseTemplate::new(204))
+                .mount(&server)
+                .await;
+        }
+        server
+    }
+
+    #[tokio::test]
+    async fn assign_lists_by_default_and_changes_nothing() {
+        let server = server_with_writable_issues().await;
+        let renderer = OutputRenderer::new(OutputFormat::Json);
+        let ctx = jira_ctx(&server, &renderer);
+
+        bulk_assign(&ctx, "project = X", "acc-1", false, false, 2)
+            .await
+            .unwrap();
+
+        assert!(writes(&server).await.is_empty(), "listing must not write");
+    }
+
+    #[tokio::test]
+    async fn assign_with_execute_and_yes_assigns_every_issue() {
+        let server = server_with_writable_issues().await;
+        let renderer = OutputRenderer::new(OutputFormat::Json);
+        let ctx = jira_ctx(&server, &renderer);
+
+        bulk_assign(&ctx, "project = X", "acc-1", true, true, 2)
+            .await
+            .unwrap();
+
+        let writes = writes(&server).await;
+        assert_eq!(writes.len(), 2, "{writes:?}");
+        assert_eq!(writes[0].0, "/rest/api/3/issue/A-1/assignee");
+        assert_eq!(writes[1].0, "/rest/api/3/issue/B-1/assignee");
+        assert!(writes
+            .iter()
+            .all(|(_, body)| body == &json!({ "accountId": "acc-1" })));
+    }
+
+    #[tokio::test]
+    async fn label_lists_by_default_and_changes_nothing() {
+        for action in [LabelAction::Add, LabelAction::Remove, LabelAction::Set] {
+            let server = server_with_writable_issues().await;
+            let renderer = OutputRenderer::new(OutputFormat::Json);
+            let ctx = jira_ctx(&server, &renderer);
+
+            bulk_label(
+                &ctx,
+                "project = X",
+                action.clone(),
+                vec!["new".into()],
+                false,
+                false,
+                2,
+            )
+            .await
+            .unwrap();
+
+            assert!(
+                writes(&server).await.is_empty(),
+                "{action:?}: listing must not write"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn label_set_with_execute_and_yes_writes_the_given_labels() {
+        let server = server_with_writable_issues().await;
+        let renderer = OutputRenderer::new(OutputFormat::Json);
+        let ctx = jira_ctx(&server, &renderer);
+
+        bulk_label(
+            &ctx,
+            "project = X",
+            LabelAction::Set,
+            vec!["new".into(), " other ".into()],
+            true,
+            true,
+            2,
+        )
+        .await
+        .unwrap();
+
+        let writes = writes(&server).await;
+        assert_eq!(writes.len(), 2, "{writes:?}");
+        assert!(writes
+            .iter()
+            .all(|(_, body)| body == &json!({ "fields": { "labels": ["new", "other"] } })));
+    }
+
+    /// `set` without labels used to send `labels: []` for every match. Now no
+    /// action accepts an empty list, and nothing is requested, not even the
+    /// search.
+    #[tokio::test]
+    async fn label_without_labels_is_an_error_and_sends_nothing() {
+        let cases: [&[&str]; 3] = [&[], &[""], &[" "]];
+        for case in cases {
+            let labels: Vec<String> = case.iter().map(|label| label.to_string()).collect();
+            for action in [LabelAction::Add, LabelAction::Remove, LabelAction::Set] {
+                let server = server_with_writable_issues().await;
+                let renderer = OutputRenderer::new(OutputFormat::Json);
+                let ctx = jira_ctx(&server, &renderer);
+
+                let err = bulk_label(
+                    &ctx,
+                    "project = X",
+                    action.clone(),
+                    labels.clone(),
+                    true,
+                    true,
+                    2,
+                )
+                .await
+                .expect_err("empty labels must be rejected");
+
+                assert!(
+                    format!("{err:#}").contains("--labels"),
+                    "{action:?}: {err:#}"
+                );
+                assert!(
+                    server
+                        .received_requests()
+                        .await
+                        .unwrap_or_default()
+                        .is_empty(),
+                    "{action:?} {labels:?}: no request may be sent"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn normalize_labels_trims_and_drops_empty_values() {
+        let labels = normalize_labels(vec![" a ".into(), String::new(), "b".into()]).unwrap();
+        assert_eq!(labels, vec!["a", "b"]);
+        assert!(normalize_labels(vec![]).is_err());
+        assert!(normalize_labels(vec!["  ".into()]).is_err());
     }
 }

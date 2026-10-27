@@ -172,9 +172,11 @@ crates/
    atlassian-cli jira workflows list
    atlassian-cli jira workflows export "Software Simplified Workflow"
 
-   # Jira - Bulk Operations
-   atlassian-cli jira bulk transition --jql "project = DEV AND status = Open" --transition "In Progress" --dry-run
-   atlassian-cli jira bulk assign --jql "project = DEV AND assignee is EMPTY" --assignee admin@example.com
+   # Jira - Bulk Operations (list by default, --execute applies, --yes skips the prompt)
+   atlassian-cli jira bulk transition --jql "project = DEV AND status = Open" --transition "In Progress"
+   atlassian-cli jira bulk transition --jql "project = DEV AND status = Open" --transition "In Progress" --execute
+   atlassian-cli jira bulk assign --jql "project = DEV AND assignee is EMPTY" --assignee admin@example.com --execute --yes
+   atlassian-cli jira bulk label --jql "project = DEV AND labels is EMPTY" --action add --labels triage --execute --yes
    atlassian-cli jira bulk export --jql "project = DEV" --output issues.csv --export-format csv
 
    # Jira - Automation & Webhooks

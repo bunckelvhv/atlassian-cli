@@ -268,7 +268,9 @@ flows up to the global (`auth logout --profile`, positional `repo` under `bb`).
 - `automation.rs` - Automation rules management
 - `webhooks.rs` - Webhook CRUD
 - `audit.rs` - Audit log retrieval
-- `bulk.rs` - Bulk issue operations
+- `bulk.rs` - Bulk issue operations. `transition`, `assign` and `label` list by
+  default and need `--execute` plus the typed confirmation or `--yes`; a
+  transition is resolved against each issue's own transitions
 
 **Confluence (`commands/confluence/`):**
 - `pages.rs` - Page CRUD, publishing drafts

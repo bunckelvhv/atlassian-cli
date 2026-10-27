@@ -11,6 +11,30 @@ resolve. `git log` remains the complete record.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `jira bulk transition`, `jira bulk assign` and `jira bulk label` no
+  longer change issues as soon as they run. They list the matching issues by default
+  (for `transition`, with the transition and target status each issue would get).
+  `--execute` applies the change, after you type the number of matching issues, or
+  pass `--yes` to skip the prompt. Without a terminal and without `--yes`,
+  `--execute` refuses. Scripts must now pass `--execute --yes`. `--dry-run` is
+  hidden and deprecated: it still lists only and cannot be combined with
+  `--execute`. `--labels` is now required and needs at least one non-empty label
+  for every action, so `jira bulk label --action set` without labels, which cleared
+  all labels on every match, is no longer possible and labels cannot be cleared
+  through bulk. (#TBD)
+
+### Fixed
+
+- `jira bulk transition` resolves the transition per issue. Before, the transition
+  ID found on the first matching issue was sent to every issue, so issues from other
+  workflows could be moved with a different transition or fail. A name is matched on
+  each issue. An ID is applied only where it has the same name as on the first
+  issue. An issue that does not offer the transition is reported with its key and
+  left unchanged, the other issues are still processed, and the command exits with
+  an error. (#TBD)
+
 ## [0.12.0] - 2026-10-16
 
 One feature, from a user report: Jira comments can be restricted to a project

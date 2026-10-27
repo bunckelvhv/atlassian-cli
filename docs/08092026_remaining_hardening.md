@@ -58,8 +58,10 @@ tried seven times and produced a new defect on six of them.
 
 `bb bulk`, `bb branch delete` and `bb repo delete` were brought onto a common
 footing: listing is the default where it makes sense, `--execute` performs the
-change, and a typed resource name is required unless `--yes` is passed. Nothing
-else in the CLI follows it.
+change, and a typed resource name is required unless `--yes` is passed.
+`jira bulk transition`, `assign` and `label` followed, see
+[27102026_jira_bulk_safety.md](27102026_jira_bulk_safety.md). Nothing else in
+the CLI follows it.
 
 Ten delete operations take no confirmation and no `--force` flag at all:
 
