@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::Serialize;
 
 use super::utils::{BambooContext, BuildResult, ResultsContainer};
@@ -149,7 +150,7 @@ pub async fn run_build(
     stage: Option<&str>,
     custom_revision: Option<&str>,
 ) -> Result<()> {
-    let mut path = format!("/rest/api/latest/queue/{}", plan_key);
+    let mut path = format!("/rest/api/latest/queue/{}", encode_path_segment(plan_key)?);
     let mut params = vec![];
 
     if let Some(s) = stage {
@@ -193,7 +194,7 @@ pub async fn run_build(
 
 /// Stop a running build.
 pub async fn stop_build(ctx: &BambooContext<'_>, build_key: &str) -> Result<()> {
-    let path = format!("/rest/api/latest/queue/{}", build_key);
+    let path = format!("/rest/api/latest/queue/{}", encode_path_segment(build_key)?);
 
     tracing::debug!("Stopping build {}", build_key);
     ctx.client
@@ -238,7 +239,10 @@ pub async fn add_comment(ctx: &BambooContext<'_>, build_key: &str, content: &str
         content: &'a str,
     }
 
-    let path = format!("/rest/api/latest/result/{}/comment", build_key);
+    let path = format!(
+        "/rest/api/latest/result/{}/comment",
+        encode_path_segment(build_key)?
+    );
     let body = CommentBody { content };
 
     tracing::debug!("Adding comment to build {}", build_key);
@@ -259,7 +263,10 @@ pub async fn add_label(ctx: &BambooContext<'_>, build_key: &str, label: &str) ->
         name: &'a str,
     }
 
-    let path = format!("/rest/api/latest/result/{}/label", build_key);
+    let path = format!(
+        "/rest/api/latest/result/{}/label",
+        encode_path_segment(build_key)?
+    );
     let body = LabelBody { name: label };
 
     tracing::debug!("Adding label '{}' to build {}", label, build_key);
@@ -278,7 +285,11 @@ pub async fn add_label(ctx: &BambooContext<'_>, build_key: &str, label: &str) ->
 
 /// Remove label from a build.
 pub async fn remove_label(ctx: &BambooContext<'_>, build_key: &str, label: &str) -> Result<()> {
-    let path = format!("/rest/api/latest/result/{}/label/{}", build_key, label);
+    let path = format!(
+        "/rest/api/latest/result/{}/label/{}",
+        encode_path_segment(build_key)?,
+        encode_path_segment(label)?
+    );
 
     tracing::debug!("Removing label '{}' from build {}", label, build_key);
     ctx.client
