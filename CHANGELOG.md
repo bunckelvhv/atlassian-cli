@@ -23,7 +23,7 @@ resolve. `git log` remains the complete record.
   `--execute`. `--labels` is now required and needs at least one non-empty label
   for every action, so `jira bulk label --action set` without labels, which cleared
   all labels on every match, is no longer possible and labels cannot be cleared
-  through bulk. (#TBD)
+  through bulk. (#177)
 
 ### Fixed
 
@@ -33,7 +33,7 @@ resolve. `git log` remains the complete record.
   each issue. An ID is applied only where it has the same name as on the first
   issue. An issue that does not offer the transition is reported with its key and
   left unchanged, the other issues are still processed, and the command exits with
-  an error. (#TBD)
+  an error. (#177)
 
 ## [0.12.0] - 2026-10-16
 

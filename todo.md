@@ -3180,7 +3180,7 @@ Changelog promoted to `## [0.12.0] - 2026-10-16` (one entry, the comment visibil
 an observable change (`comments update` without a visibility flag reads before it writes). Shipped: tag `v0.12.0` on `f50e7fe`, 14 release assets, six crates on crates.io, Homebrew
 formula at 0.12.0, downloaded macOS artifact verified. Record: `docs/16102026_release_0_12_0_plan.md`.
 
-## 2026-10-27: jira bulk safety and per-issue transitions (branch `fix/jira-bulk-safety`)
+## 2026-10-27: jira bulk safety and per-issue transitions (branch `fix/jira-bulk-safety`, PR #177)
 
 `jira bulk transition`, `assign` and `label` changed every issue a JQL query matched as soon as they
 ran: no preview unless `--dry-run` was passed, no confirmation, and a run without a terminal wrote

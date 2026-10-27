@@ -1,6 +1,6 @@
 # `jira bulk`: confirmed changes and per-issue transitions
 
-Status: in review (PR #TBD).
+Status: in review (PR #177).
 
 ## Problem
 
