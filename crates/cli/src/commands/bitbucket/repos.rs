@@ -142,7 +142,8 @@ pub async fn create_repo(
     }
 
     let path = format!(
-        "/2.0/repositories/{workspace}/{}",
+        "/2.0/repositories/{}/{}",
+        encode_path_segment(workspace)?,
         encode_path_segment(slug)?
     );
     let repo: Repo = ctx
@@ -198,7 +199,8 @@ pub async fn update_repo(
     }
 
     let path = format!(
-        "/2.0/repositories/{workspace}/{}",
+        "/2.0/repositories/{}/{}",
+        encode_path_segment(workspace)?,
         encode_path_segment(slug)?
     );
     let repo: Repo = ctx
@@ -257,7 +259,8 @@ pub async fn delete_repo(
     // reached the branch-delete endpoint and still reported a deleted
     // repository.
     let path = format!(
-        "/2.0/repositories/{workspace}/{}",
+        "/2.0/repositories/{}/{}",
+        encode_path_segment(workspace)?,
         encode_path_segment(slug)?
     );
     let _: serde_json::Value = ctx

@@ -141,17 +141,41 @@ pub fn parse_git_remote(url: &str) -> Option<(String, String)> {
 
 /// Parse path segments to extract workspace and repo
 /// Handles both "workspace/repo.git" and "workspace/repo"
+///
+/// Both names must use the Bitbucket character set, because the names this
+/// returns are later placed into request paths. Anything else is treated as
+/// "not a Bitbucket remote".
 fn parse_path_segments(path: &str) -> Option<(String, String)> {
     let parts: Vec<&str> = path.split('/').collect();
     if parts.len() >= 2 {
         let workspace = parts[0];
         let repo = parts[1].strip_suffix(".git").unwrap_or(parts[1]);
 
-        if !workspace.is_empty() && !repo.is_empty() {
-            return Some((workspace.to_string(), repo.to_string()));
+        if workspace.is_empty() || repo.is_empty() {
+            return None;
         }
+        if !is_valid_bitbucket_name(workspace) || !is_valid_bitbucket_name(repo) {
+            tracing::debug!(
+                workspace,
+                repo,
+                "Ignoring remote with characters outside the Bitbucket name set"
+            );
+            return None;
+        }
+        return Some((workspace.to_string(), repo.to_string()));
     }
     None
+}
+
+/// Bitbucket workspace and repository names consist of letters, digits, `-`,
+/// `_` and `.`. The dot segments `.` and `..` are not names.
+fn is_valid_bitbucket_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
 /// Get all git remotes with their URLs
@@ -306,5 +330,53 @@ mod tests {
             parse_git_remote("https://bitbucket.org/workspace/repo/extra/path.git"),
             Some(("workspace".to_string(), "repo".to_string()))
         );
+    }
+
+    #[test]
+    fn test_parse_accepts_the_bitbucket_character_set() {
+        assert_eq!(
+            parse_git_remote("git@bitbucket.org:My-Team_1/repo.v2-x.git"),
+            Some(("My-Team_1".to_string(), "repo.v2-x".to_string()))
+        );
+        assert_eq!(
+            parse_git_remote("https://bitbucket.org/my.team/..hidden"),
+            Some(("my.team".to_string(), "..hidden".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_discards_ssh_names_outside_the_character_set() {
+        for remote in [
+            "git@bitbucket.org:ws/r?x.git",
+            "git@bitbucket.org:ws/r#x.git",
+            "git@bitbucket.org:ws/r%3Fx.git",
+            "git@bitbucket.org:ws/r x.git",
+            "git@bitbucket.org:w?s/repo.git",
+            "git@bitbucket.org:w#s/repo.git",
+            "git@bitbucket.org:w%s/repo.git",
+            "git@bitbucket.org:w s/repo.git",
+            "git@bitbucket.org:ws/r\\x.git",
+            "git@bitbucket.org:../repo.git",
+            "git@bitbucket.org:ws/...git",
+            "git@bitbucket.org:./repo",
+            "git@bitbucket.org:ws/..",
+        ] {
+            assert_eq!(parse_git_remote(remote), None, "{remote}");
+        }
+    }
+
+    #[test]
+    fn test_parse_discards_https_names_outside_the_character_set() {
+        for remote in [
+            "https://bitbucket.org/ws/r%3Fx.git",
+            "https://bitbucket.org/ws/r%23x",
+            "https://bitbucket.org/ws/r%25x",
+            "https://bitbucket.org/ws/r%20x.git",
+            "https://bitbucket.org/w%3Fs/repo",
+            "https://bitbucket.org/ws/%2e%2e",
+            "https://bitbucket.org/ws/r+x",
+        ] {
+            assert_eq!(parse_git_remote(remote), None, "{remote}");
+        }
     }
 }

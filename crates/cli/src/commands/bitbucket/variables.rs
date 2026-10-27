@@ -318,7 +318,9 @@ pub async fn update_variable(
     // Tri-state: None → preserve current, Some(true) → secure, Some(false) → unsecure
     let secured = secured_opt.unwrap_or(existing.secured);
 
-    let path = format!("{base_url}{uuid}");
+    // The uuid comes from the listing response, not from the command line, but
+    // it still must not be able to restructure the path.
+    let path = format!("{base_url}{}", encode_path_segment(&uuid)?);
     let payload = UpdateVariablePayload {
         key,
         value,
@@ -362,7 +364,7 @@ pub async fn delete_variable(
 
     let (_var, uuid) = resolve_variable(ctx, scope, key).await?;
 
-    let path = format!("{base_url}{uuid}");
+    let path = format!("{base_url}{}", encode_path_segment(&uuid)?);
     ctx.client
         .delete_no_content(&path)
         .await

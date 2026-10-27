@@ -167,7 +167,11 @@ pub async fn create_branch(
         }
     });
 
-    let path = format!("/2.0/repositories/{workspace}/{repo_slug}/refs/branches");
+    let path = format!(
+        "/2.0/repositories/{}/{}/refs/branches",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
+    );
     let branch: Branch = ctx.client.post(&path, &payload).await.with_context(|| {
         format!("Failed to create branch {branch_name} in {workspace}/{repo_slug}")
     })?;
@@ -261,7 +265,11 @@ pub async fn protect_branch(
         payload["value"] = serde_json::json!(approvals);
     }
 
-    let path = format!("/2.0/repositories/{workspace}/{repo_slug}/branch-restrictions");
+    let path = format!(
+        "/2.0/repositories/{}/{}/branch-restrictions",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
+    );
     let restriction: BranchRestriction =
         ctx.client.post(&path, &payload).await.with_context(|| {
             format!("Failed to add branch protection for {workspace}/{repo_slug}")
