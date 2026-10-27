@@ -37,7 +37,10 @@ ID does not exist.
 - `--dry-run` is hidden and deprecated. It conflicts with `--execute` and means
   "list only".
 - `--labels` is required and needs at least one non-empty value for `add`,
-  `remove` and `set`. Clearing all labels through bulk is no longer possible.
+  `remove` and `set`. A missing or empty `--labels` is rejected for every action,
+  so `set` can no longer clear all labels implicitly. `remove` with explicit
+  labels is unchanged and can still empty an issue's labels by removing all of
+  them.
 - `transition` resolves the transition on every issue separately (details below).
 - `jira bulk import` and `jira bulk export` are unchanged.
 
@@ -67,8 +70,9 @@ a change, and clap rejects it next to `--execute`.
 empty ones are dropped, and an empty result is an error for every action. clap
 additionally marks `--labels` as required, so the omission is reported as a usage
 error. A mistyped or empty variable can no longer turn `set` into "clear all
-labels". Clearing labels in bulk was never a documented use, and doing it by
-omission is the hazard being removed.
+labels". The restriction is only on the missing or empty value: `remove` is
+deliberately left alone, and with explicit labels it can still remove every label
+an issue has. The hazard being removed is clearing by omission.
 
 ### No match
 
@@ -83,8 +87,10 @@ the request on each one. The decision is a pure function,
 `resolve_transition(available, request)`, which returns the transition ID, its
 name and the target status (`to.name`), or `None`.
 
-- **A name** is compared case-insensitively on each issue, Unicode aware
-  (`CAFÉ` matches `café`).
+- **A name** is compared by Unicode lowercase forms (`to_lowercase()` on both
+  sides), so `CAFÉ` matches `café`. This is not full Unicode case folding:
+  `Straße` and `STRASSE`, or a final sigma, compare as different names. That fails
+  closed, because such a name is reported as not available and nothing runs.
 - **An ID** is a value that equals a transition ID on the first issue
   (`TransitionRequest::from_first_issue`). It is pinned to the name it has there.
   On every other issue it is only used if the ID exists with the same name.
@@ -126,10 +132,11 @@ from the search response, not from the command line.
 - **The transition is resolved before the prompt, not at write time.** An
   issue whose status changes while the prompt waits can reject the request. That
   issue is reported as a failure and nothing else is affected.
-- **An ID is tied to the first issue.** If the first issue does not offer the ID,
-  or cannot be read, a number is applied to no issue. Use the transition name for
-  queries that span workflows, or order the query so a suitable issue comes
-  first.
+- **An ID is tied to the first issue.** A numeric value is resolved by name if it
+  matches a transition name on the first issue and no ID there. It applies
+  nowhere when the first issue cannot be read, or when it matches neither an ID
+  nor a name on the first issue. Use the transition name for queries that span
+  workflows, or order the query so a suitable issue comes first.
 - **Two transitions with the same name on one issue.** The first one in Jira's
   list is used, as before. Jira does not promise an order.
 - **Search is capped at 1000 issues, as before.** The count in the prompt is the
@@ -199,6 +206,7 @@ The binary has no terminal on stdin there, which is what a script looks like:
   `label_execute_with_yes_writes_the_labels`
 - `label_without_labels_is_rejected_for_every_action`
 - `no_match_renders_an_empty_json_list_for_every_command`
+- `no_match_prints_nothing_in_quiet_format_for_every_command`
 - `the_deprecated_dry_run_flag_still_lists_only`
 - `dry_run_cannot_be_combined_with_execute`: also checks the clap message
 - `yes_alone_does_not_execute`

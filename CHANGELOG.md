@@ -22,8 +22,8 @@ resolve. `git log` remains the complete record.
   hidden and deprecated: it still lists only and cannot be combined with
   `--execute`. `--labels` is now required and needs at least one non-empty label
   for every action, so `jira bulk label --action set` without labels, which cleared
-  all labels on every match, is no longer possible and labels cannot be cleared
-  through bulk. (#177)
+  all labels on every match, is rejected. `remove` is unchanged and can still empty
+  the labels of an issue by removing all of them. (#177)
 
 ### Fixed
 

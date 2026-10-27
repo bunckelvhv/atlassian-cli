@@ -537,7 +537,7 @@ pub(crate) struct TransitionTarget {
 /// carries the name it had on the first issue.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TransitionRequest {
-    /// Matched by name (case-insensitive, Unicode aware) on each issue.
+    /// Matched by name (Unicode lowercase comparison) on each issue.
     ByName(String),
     /// An ID, pinned to the name it has on the first issue.
     ById { id: String, name: String },
@@ -546,8 +546,10 @@ pub(crate) enum TransitionRequest {
     Unresolvable(String),
 }
 
-/// Case-insensitive, Unicode-aware name comparison. `eq_ignore_ascii_case`
-/// would treat `CAFÉ` and `café` as different names.
+/// Name comparison by Unicode lowercase forms. `eq_ignore_ascii_case` would
+/// treat `CAFÉ` and `café` as different names. This is not full case folding
+/// (`Straße` and `STRASSE` differ), which fails closed: such a name is reported
+/// as not available instead of matching the wrong transition.
 fn same_name(a: &str, b: &str) -> bool {
     a.to_lowercase() == b.to_lowercase()
 }
@@ -883,8 +885,9 @@ struct LabelRow<'a> {
 /// Trim the labels and drop empty values, and refuse an empty result.
 ///
 /// `set` with no labels used to send `labels: []`, which clears every label on
-/// every matching issue. That is no longer possible through bulk, for any
-/// action: a mistyped or empty variable must not be able to do it.
+/// every matching issue. A missing or empty list is now rejected for every
+/// action, so a mistyped or empty variable cannot clear labels implicitly.
+/// `remove` with explicit labels is unchanged.
 pub(crate) fn normalize_labels(labels: Vec<String>) -> Result<Vec<String>> {
     let labels: Vec<String> = labels
         .into_iter()
@@ -893,10 +896,7 @@ pub(crate) fn normalize_labels(labels: Vec<String>) -> Result<Vec<String>> {
         .collect();
 
     if labels.is_empty() {
-        bail!(
-            "--labels needs at least one non-empty label. \
-             Clearing labels through a bulk operation is not supported."
-        );
+        bail!("--labels needs at least one non-empty label, for every action.");
     }
     Ok(labels)
 }

@@ -725,6 +725,30 @@ async fn no_match_renders_an_empty_json_list_for_every_command() {
     assert!(writes(&server).await.is_empty());
 }
 
+/// `-f quiet` is line oriented: no match means no lines, not prose.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_match_prints_nothing_in_quiet_format_for_every_command() {
+    let server = MockServer::start().await;
+    mount_search(&server, &[]).await;
+    let dir = TempDir::new().unwrap();
+    let config = write_config(dir.path(), &server.uri());
+
+    let cases: [&[&str]; 3] = [
+        &["transition", "--transition", "Finish"],
+        &["assign", "--assignee", "acc-1"],
+        &["label", "--action", "add", "--labels", "a"],
+    ];
+    for sub in cases {
+        let mut args = vec!["jira", "bulk"];
+        args.extend(sub.iter().copied());
+        args.extend(["--jql", "project = X", "-f", "quiet"]);
+        let out = run(&config, &args);
+        assert!(out.status.success(), "{sub:?}: {}", stderr(&out));
+        assert_eq!(stdout(&out), "", "{sub:?}");
+    }
+    assert!(writes(&server).await.is_empty());
+}
+
 /// Three issues where the first one's transitions cannot be read.
 async fn server_with_unreadable_first_issue(posts: Option<u64>) -> MockServer {
     let server = MockServer::start().await;
