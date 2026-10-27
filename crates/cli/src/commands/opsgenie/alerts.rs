@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::Serialize;
 use url::form_urlencoded;
 
@@ -190,7 +191,7 @@ pub async fn close_alert(
         note: Option<String>,
     }
 
-    let path = format!("alerts/{}/close", identifier);
+    let path = format!("alerts/{}/close", encode_path_segment(identifier)?);
     let body = CloseBody { note };
 
     tracing::debug!("Closing alert {}", identifier);
@@ -216,7 +217,7 @@ pub async fn acknowledge_alert(
         note: Option<String>,
     }
 
-    let path = format!("alerts/{}/acknowledge", identifier);
+    let path = format!("alerts/{}/acknowledge", encode_path_segment(identifier)?);
     let body = AckBody { note };
 
     tracing::debug!("Acknowledging alert {}", identifier);
@@ -242,7 +243,7 @@ pub async fn unacknowledge_alert(
         note: Option<String>,
     }
 
-    let path = format!("alerts/{}/unacknowledge", identifier);
+    let path = format!("alerts/{}/unacknowledge", encode_path_segment(identifier)?);
     let body = UnackBody { note };
 
     tracing::debug!("Unacknowledging alert {}", identifier);
@@ -271,7 +272,7 @@ pub async fn snooze_alert(
         note: Option<String>,
     }
 
-    let path = format!("alerts/{}/snooze", identifier);
+    let path = format!("alerts/{}/snooze", encode_path_segment(identifier)?);
     let body = SnoozeBody {
         end_time: end_time.to_string(),
         note,
@@ -310,7 +311,7 @@ pub async fn escalate_alert(
         id: String,
     }
 
-    let path = format!("alerts/{}/escalate", identifier);
+    let path = format!("alerts/{}/escalate", encode_path_segment(identifier)?);
     let body = EscalateBody {
         escalation: EscalationRef {
             id: escalation_id.to_string(),
@@ -352,7 +353,7 @@ pub async fn assign_alert(
         id: String,
     }
 
-    let path = format!("alerts/{}/assign", identifier);
+    let path = format!("alerts/{}/assign", encode_path_segment(identifier)?);
     let body = AssignBody {
         owner: OwnerRef {
             id: owner_id.to_string(),
@@ -378,7 +379,7 @@ pub async fn add_note(ctx: &OpsgenieContext<'_>, identifier: &str, note: &str) -
         note: &'a str,
     }
 
-    let path = format!("alerts/{}/notes", identifier);
+    let path = format!("alerts/{}/notes", encode_path_segment(identifier)?);
     let body = NoteBody { note };
 
     tracing::debug!("Adding note to alert {}", identifier);
@@ -394,7 +395,7 @@ pub async fn add_note(ctx: &OpsgenieContext<'_>, identifier: &str, note: &str) -
 
 /// Delete an alert.
 pub async fn delete_alert(ctx: &OpsgenieContext<'_>, identifier: &str) -> Result<()> {
-    let path = format!("alerts/{}", identifier);
+    let path = format!("alerts/{}", encode_path_segment(identifier)?);
 
     tracing::debug!("Deleting alert {}", identifier);
     ctx.client

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::Serialize;
 
 use super::utils::{ApiResponse, Heartbeat, OpsgenieContext};
@@ -64,7 +65,7 @@ pub async fn list_heartbeats(ctx: &OpsgenieContext<'_>) -> Result<()> {
 
 /// Get heartbeat details.
 pub async fn get_heartbeat(ctx: &OpsgenieContext<'_>, name: &str) -> Result<()> {
-    let path = format!("heartbeats/{}", name);
+    let path = format!("heartbeats/{}", encode_path_segment(name)?);
     tracing::debug!("Fetching heartbeat {}", name);
 
     let response: ApiResponse<Heartbeat> = ctx
@@ -160,7 +161,7 @@ pub async fn create_heartbeat(
 
 /// Delete a heartbeat.
 pub async fn delete_heartbeat(ctx: &OpsgenieContext<'_>, name: &str) -> Result<()> {
-    let path = format!("heartbeats/{}", name);
+    let path = format!("heartbeats/{}", encode_path_segment(name)?);
 
     tracing::debug!("Deleting heartbeat {}", name);
     ctx.client
@@ -175,7 +176,7 @@ pub async fn delete_heartbeat(ctx: &OpsgenieContext<'_>, name: &str) -> Result<(
 
 /// Enable a heartbeat.
 pub async fn enable_heartbeat(ctx: &OpsgenieContext<'_>, name: &str) -> Result<()> {
-    let path = format!("heartbeats/{}/enable", name);
+    let path = format!("heartbeats/{}/enable", encode_path_segment(name)?);
 
     tracing::debug!("Enabling heartbeat {}", name);
     ctx.client
@@ -190,7 +191,7 @@ pub async fn enable_heartbeat(ctx: &OpsgenieContext<'_>, name: &str) -> Result<(
 
 /// Disable a heartbeat.
 pub async fn disable_heartbeat(ctx: &OpsgenieContext<'_>, name: &str) -> Result<()> {
-    let path = format!("heartbeats/{}/disable", name);
+    let path = format!("heartbeats/{}/disable", encode_path_segment(name)?);
 
     tracing::debug!("Disabling heartbeat {}", name);
     ctx.client
@@ -205,7 +206,7 @@ pub async fn disable_heartbeat(ctx: &OpsgenieContext<'_>, name: &str) -> Result<
 
 /// Send a ping to a heartbeat.
 pub async fn ping_heartbeat(ctx: &OpsgenieContext<'_>, name: &str) -> Result<()> {
-    let path = format!("heartbeats/{}/ping", name);
+    let path = format!("heartbeats/{}/ping", encode_path_segment(name)?);
 
     tracing::debug!("Pinging heartbeat {}", name);
     ctx.client

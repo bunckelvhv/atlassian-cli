@@ -12,6 +12,9 @@ mod services;
 mod teams;
 pub mod utils;
 
+#[cfg(test)]
+mod path_encoding_tests;
+
 pub use utils::OpsgenieContext;
 
 /// OpsGenie region for API endpoints.

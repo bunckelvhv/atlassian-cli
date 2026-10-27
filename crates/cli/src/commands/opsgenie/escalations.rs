@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::Serialize;
 
 use super::utils::{ApiResponse, Escalation, OpsgenieContext, PagedResponse};
@@ -174,7 +175,7 @@ pub async fn create_escalation(
 
 /// Delete an escalation policy.
 pub async fn delete_escalation(ctx: &OpsgenieContext<'_>, identifier: &str) -> Result<()> {
-    let path = format!("escalations/{}", identifier);
+    let path = format!("escalations/{}", encode_path_segment(identifier)?);
 
     tracing::debug!("Deleting escalation {}", identifier);
     ctx.client
