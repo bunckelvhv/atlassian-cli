@@ -13,8 +13,11 @@
 #   # Add archived labels
 #   ./bulk-cleanup.sh --space DOCS --days 365 --label
 #
-#   # Delete old pages (requires confirmation)
+#   # Delete old pages (lists them, asks for confirmation, then moves them to the trash)
 #   ./bulk-cleanup.sh --space DOCS --days 365 --delete
+#
+# Note: `confluence bulk delete` only lists the matching pages unless it gets
+# --execute. The script passes --execute --yes only after its own confirmation.
 #
 # Requirements:
 #   - atlassian-cli installed and configured
@@ -156,18 +159,21 @@ add_labels_bulk() {
 delete_pages_bulk() {
     local cql="$1"
 
+    # Without --execute, `bulk delete` only lists what it would act on. The
+    # listing is also what the count comes from, so the number confirmed below
+    # is the number that is deleted (one search page, at most 1000 pages).
+    local count
+    count=$(atlassian-cli --profile "$PROFILE" confluence bulk delete \
+        --cql "$cql" \
+        --format json | jq '. | length')
+
     if [ "$DRY_RUN" = "true" ]; then
-        warn "[DRY-RUN] Would delete matching pages"
+        warn "[DRY-RUN] Would move $count pages to the trash"
         return
     fi
 
     # Safety confirmation
-    local count
-    count=$(atlassian-cli --profile "$PROFILE" confluence search cql \
-        --format json \
-        "$cql" | jq '. | length')
-
-    warn "This will permanently delete $count pages!"
+    warn "This will move $count pages to the trash!"
     read -rp "Type 'DELETE' to confirm: " confirm
 
     if [ "$confirm" != "DELETE" ]; then
@@ -179,9 +185,11 @@ delete_pages_bulk() {
 
     atlassian-cli --profile "$PROFILE" confluence bulk delete \
         --cql "$cql" \
+        --execute \
+        --yes \
         --concurrency 2
 
-    log "Pages deleted"
+    log "Pages moved to the trash"
 }
 
 # Main execution

@@ -61,11 +61,13 @@ footing: listing is the default where it makes sense, `--execute` performs the
 change, and a typed resource name is required unless `--yes` is passed. Nothing
 else in the CLI follows it.
 
-Ten delete operations take no confirmation and no `--force` flag at all:
+Nine delete operations take no confirmation and no `--force` flag at all. A tenth,
+`confluence bulk delete`, was the least guarded and now lists by default and needs
+`--execute` plus a typed match count or `--yes`; see
+[27102026_confluence_bulk_delete_safety.md](27102026_confluence_bulk_delete_safety.md).
 
 | Command | Reversible? |
 | --- | --- |
-| `confluence bulk delete-pages` | **No** — bulk, and the least guarded thing in the CLI |
 | `jira field delete` | **No** |
 | `jira project component delete` | **No** |
 | `jira project version delete` | **No** |
@@ -79,7 +81,7 @@ Ten delete operations take no confirmation and no `--force` flag at all:
 The rest use a `--force` flag, which is the fail-closed pattern and acceptable;
 only the typed-name commands go further.
 
-**This needs a product decision before a sweep.** Adding prompts to ten commands
+**This needs a product decision before a sweep.** Adding prompts to nine commands
 across three products changes behaviour for anyone scripting them, and the
 codebase already contains two defensible patterns (`--force`, and typed-name
 confirmation). Picking one per command is a judgement about blast radius, not a

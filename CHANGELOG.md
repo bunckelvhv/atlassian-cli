@@ -11,6 +11,18 @@ resolve. `git log` remains the complete record.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `confluence bulk delete` now only lists the matching pages (ID
+  and title) and deletes nothing unless it gets `--execute`. With `--execute`
+  it asks you to type the number of matched pages, and without a terminal it
+  refuses instead of deleting. Scripts that relied on the old behaviour must now
+  pass `--execute --yes`. `--yes` only skips the typed confirmation and has no
+  effect without `--execute`. `--dry-run` is hidden and deprecated: it behaves
+  like the new default and is rejected together with `--execute`. Deleted pages
+  go to the Confluence trash, and a run covers at most the first 1000 matches.
+  (#TBD)
+
 ## [0.12.0] - 2026-10-16
 
 One feature, from a user report: Jira comments can be restricted to a project

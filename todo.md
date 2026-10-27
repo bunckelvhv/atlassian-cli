@@ -3179,3 +3179,33 @@ Changelog promoted to `## [0.12.0] - 2026-10-16` (one entry, the comment visibil
 #170), version bumped in the root manifest and the five internal pins. Minor bump: new flags and
 an observable change (`comments update` without a visibility flag reads before it writes). Shipped: tag `v0.12.0` on `f50e7fe`, 14 release assets, six crates on crates.io, Homebrew
 formula at 0.12.0, downloaded macOS artifact verified. Record: `docs/16102026_release_0_12_0_plan.md`.
+
+## 2026-10-27: confluence bulk delete preview and confirmation (branch `fix/confluence-bulk-delete-confirmation`)
+
+`confluence bulk delete` deleted every page a CQL query matched as soon as it ran, up to one
+search page of 1000. It asked nothing, and without a terminal it deleted all the same. Only the
+opt-in `--dry-run` previewed. `bb bulk delete-branches` and `bb bulk archive-repos` already list
+by default and gate the change behind `--execute` and a typed confirmation.
+
+### The change
+`crates/cli/src/commands/confluence/bulk.rs`: `bulk_delete_pages()` now lists the matches (ID and
+title, with a hint on stderr) unless `execute` is set. With `execute` it calls
+`confirm_destructive()` with the match count as the expected text, unless `assume_yes` is set,
+before the first DELETE. The body lives in `delete_pages_with()`, which takes the confirmation as
+a parameter so tests do not depend on a terminal. `search_pages()` now returns the title next to
+the ID, and `search_page_ids()` (used by `add-labels`) wraps it, so `add-labels` is unchanged.
+`crates/cli/src/commands/confluence/mod.rs`: `BulkCommands::Delete` gets `--execute` and `--yes`;
+`--dry-run` stays, hidden, and conflicts with `--execute`. README, `docs/examples/confluence/bulk-cleanup.sh`,
+`docs/08092026_remaining_hardening.md`, `docs/index.md` and the new
+`docs/27102026_confluence_bulk_delete_safety.md` follow the change.
+
+### Tests
+Unit tests in `bulk.rs` over wiremock: listing sends no DELETE, `--yes` alone does not delete,
+`--execute` without a terminal refuses (through `confirm_destructive_on(.., false)`), the
+confirmation expects the match count and names the trash and the 1000 page cap, a passed
+confirmation and `--yes` delete every match, no matches asks nothing. End-to-end tests in
+`crates/cli/tests/confluence_bulk_delete_e2e.rs` drive the binary with stdin closed: listing,
+`--yes` without `--execute`, deprecated `--dry-run`, `--dry-run --execute` rejected by clap,
+`--execute` refused without `--yes`, `--execute --yes` deletes. Breaking change for scripts: they
+must pass `--execute --yes`.
+

@@ -228,7 +228,10 @@ crates/
    atlassian-cli confluence attachment delete 11111 --force
 
    # Confluence - Bulk Operations
-   atlassian-cli confluence bulk delete --cql "space = OLD AND type = page" --dry-run
+   # bulk delete only lists the matching pages; --execute moves them to the trash
+   # (after typing the match count back, or immediately with --yes).
+   atlassian-cli confluence bulk delete --cql "space = OLD AND type = page"
+   atlassian-cli confluence bulk delete --cql "space = OLD AND type = page" --execute
    atlassian-cli confluence bulk add-labels --cql "space = DEV" --labels docs,reviewed --dry-run
    atlassian-cli confluence bulk export --cql "space = DEV" --output backup.json --export-format json
 
