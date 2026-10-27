@@ -193,14 +193,10 @@ pub fn accept_safe_identifier(value: &str, what: &str) -> anyhow::Result<()> {
 /// against the `url` version in the lockfile. That mistaken belief is why the
 /// weaker guard above exists at all, and why it is now confined to the one
 /// case that genuinely cannot encode.
-pub fn encode_path_segment(value: &str) -> anyhow::Result<String> {
-    if value.contains('/') {
-        anyhow::bail!(
-            "Invalid identifier {value:?}: '/' would address a different resource than the one named"
-        );
-    }
-    encode_ref_path(value)
-}
+///
+/// The implementation lives in `atlassian_cli_api::path` so every product
+/// shares one definition; it is re-exported here for the Bitbucket call sites.
+pub use atlassian_cli_api::path::encode_path_segment;
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,6 @@
 pub mod error;
 pub mod pagination;
+pub mod path;
 pub mod query;
 pub mod ratelimit;
 mod response;
@@ -335,7 +336,7 @@ pub struct ApiClient {
 /// The query is exempt: JQL and CQL legitimately contain dots, spaces and `..`
 /// ranges, and a query cannot move the request to another resource. A caller
 /// needing any of these literally in a path must percent-encode it, which is
-/// what `encode_path_segment` in the CLI does.
+/// what [`path::encode_path_segment`] does.
 fn reject_restructuring_path(path: &str) -> Result<()> {
     let restructured = |reason: &str| {
         debug!(
