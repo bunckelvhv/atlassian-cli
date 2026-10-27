@@ -33,6 +33,13 @@ Two mitigations are in place:
   themselves. **No raw `{workspace}/{repo_slug}` prefix remains at any DELETE
   site there.**
 
+Update: [27102026_path_identifier_encoding.md](27102026_path_identifier_encoding.md)
+adds a shared helper, `atlassian_cli_api::path::encode_path_segment`, and uses
+it at every POST, PUT, PATCH and DELETE site in all products. The table below
+counts the shape (`format!` building a path), so it still includes the read-only
+requests, which that change leaves alone, and the integer-typed identifiers,
+which need no encoding.
+
 What remains:
 
 | Product | Path-building `format!` calls |

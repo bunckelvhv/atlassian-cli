@@ -399,6 +399,17 @@ Debug data flow: **`--debug` (global) → `main::tracing_directives` →
 → `ApiClient` request/response events → stderr.** `RUST_LOG` directives are
 appended as refinements; stdout carries only command output.
 
+**Path segments** (`crates/api/src/path.rs`). Commands build request paths with
+`format!`, so a caller-provided identifier has to be made safe before it is
+interpolated. `encode_path_segment` percent-encodes everything outside the
+RFC 3986 unreserved set and rejects an empty value, a value containing `/`, and
+the dot segments `.` and `..` with `ApiError::InvalidIdentifier`. Every command
+that writes or deletes (POST, PUT, PATCH, DELETE, including the multipart
+uploads, which bypass `safe_join`) passes its identifiers through it; the
+Bitbucket command modules re-export it from `bitbucket/utils.rs`. Query values
+use `query::encode_query_component`. See
+[27102026_path_identifier_encoding.md](27102026_path_identifier_encoding.md).
+
 **Pagination** (`crates/api/src/pagination.rs`).
 
 Until v0.9.0 this module exposed a `Paginator` trait and `PagedResponse` that

@@ -3179,3 +3179,31 @@ Changelog promoted to `## [0.12.0] - 2026-10-16` (one entry, the comment visibil
 #170), version bumped in the root manifest and the five internal pins. Minor bump: new flags and
 an observable change (`comments update` without a visibility flag reads before it writes). Shipped: tag `v0.12.0` on `f50e7fe`, 14 release assets, six crates on crates.io, Homebrew
 formula at 0.12.0, downloaded macOS artifact verified. Record: `docs/16102026_release_0_12_0_plan.md`.
+
+## 2026-10-27: percent-encode identifiers in write and delete paths (branch `fix/encode-path-identifiers`)
+
+Request paths are built with `format!`, and most write and delete call sites interpolated caller-provided
+identifiers as they were. A `?`, `#` or `/` in such a value can change the request target, and the central
+guard in `crates/api` cannot catch a `?`. The Confluence and Jira multipart uploads build their URL by hand
+and skip the guard, `opsgenie heartbeat get a/ping` reached the ping endpoint, and Bitbucket names read from
+git remotes were not checked at all.
+
+### The change
+`crates/api/src/path.rs`: `encode_path_segment()` percent-encodes everything outside the RFC 3986 unreserved
+set and rejects empty values, `/`, `.` and `..` with the new `ApiError::InvalidIdentifier`.
+`bitbucket/utils.rs` re-exports it. Every POST, PUT, PATCH and DELETE (including `delete_no_content`,
+`delete_with_body` and both multipart uploads) with a non-numeric identifier in the path now uses it, in the
+Bitbucket, Jira, Confluence, JSM, Opsgenie and Bamboo command modules; reads that feed a write share the
+encoded path, and two query values (`roles remove-actor --user`, `watchers remove`) use
+`encode_query_component`. `opsgenie heartbeat get` and `ping` are encoded too.
+`bitbucket/git.rs::parse_path_segments` accepts a workspace and slug only if they match the Bitbucket
+character set and are not dot segments; otherwise it returns `None` and logs at debug level.
+Read-only requests, the raw `api` passthrough and a few query values are left as they were, listed in
+`docs/27102026_path_identifier_encoding.md`.
+
+### Tests
+Unit tests for the helper and for `parse_path_segments` (valid remotes, names with `?`, `#`, `%`, space).
+New `path_encoding_tests.rs` modules per product, with wiremock, assert the received path: `bb pr
+reopen-comment`, `jira roles remove-actor`, Jira comment delete and watcher remove, Confluence label remove
+and attachment upload, `opsgenie team remove-member`, heartbeat get and ping, Bamboo label remove and JSM
+feedback delete. Rejected values must produce no request.

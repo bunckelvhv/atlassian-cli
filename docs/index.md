@@ -45,6 +45,7 @@ changes made, newest last; `docs/todo.md` is the forward-looking roadmap.
 
 | Document | Date | What it covers |
 | --- | --- | --- |
+| [27102026_path_identifier_encoding.md](27102026_path_identifier_encoding.md) | 2026-10-27 | Identifiers in write and delete request paths are percent-encoded in every product through one shared helper (`atlassian_cli_api::path::encode_path_segment`), including the multipart uploads, and Bitbucket names read from git remotes are validated; in review |
 | [28092026_feedback_open_items.md](28092026_feedback_open_items.md) | 2026-09-28 | Paused pipelines report `PAUSED` (exit code 3), plain pipeline JSON, single objects render as tables, `[REPO]` on pipeline commands, `--debug` traces requests, `pr update --reviewers`; shipped in 0.10.0 |
 | [17092026_changelog_and_release_notes.md](17092026_changelog_and_release_notes.md) | 2026-09-17 | Root `CHANGELOG.md` in Keep a Changelog format with all 37 releases backfilled, release notes drawn from it by cargo-dist, and a root `AGENTS.md` carrying the release runbook; shipped in 0.9.2 |
 | [12092026_site_url_move.md](12092026_site_url_move.md) | 2026-09-12 | Project site moved to `atlassian-cli.pages.dev`: `Cargo.toml` homepage, README, SECURITY and docs links retargeted, plus an idempotent crates.io publish; shipped in 0.9.1 |
