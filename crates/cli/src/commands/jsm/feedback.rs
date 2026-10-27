@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::Serialize;
 
 use super::utils::{Feedback, JsmContext};
@@ -52,7 +53,10 @@ pub async fn submit_feedback(
         body: String,
     }
 
-    let path = format!("/rest/servicedeskapi/request/{key}/feedback");
+    let path = format!(
+        "/rest/servicedeskapi/request/{}/feedback",
+        encode_path_segment(key)?
+    );
     let body = FeedbackBody {
         rating,
         comment: comment.map(|c| CommentBody { body: c }),
@@ -79,7 +83,10 @@ pub async fn submit_feedback(
 
 /// Delete feedback for a request.
 pub async fn delete_feedback(ctx: &JsmContext<'_>, key: &str) -> Result<()> {
-    let path = format!("/rest/servicedeskapi/request/{key}/feedback");
+    let path = format!(
+        "/rest/servicedeskapi/request/{}/feedback",
+        encode_path_segment(key)?
+    );
 
     tracing::debug!("Deleting feedback for request {}", key);
     ctx.client
