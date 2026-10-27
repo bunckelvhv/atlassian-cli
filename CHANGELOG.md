@@ -23,7 +23,7 @@ resolve. `git log` remains the complete record.
   `/ping` reached the ping endpoint. Bitbucket workspace and repository names
   detected from git remotes are validated and ignored when they use characters
   outside the Bitbucket name set, or when the remote URL has a query, a
-  fragment or a dot segment. (#TBD)
+  fragment or a dot segment. (#178)
 
 ## [0.12.0] - 2026-10-16
 

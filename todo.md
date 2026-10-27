@@ -3180,7 +3180,7 @@ Changelog promoted to `## [0.12.0] - 2026-10-16` (one entry, the comment visibil
 an observable change (`comments update` without a visibility flag reads before it writes). Shipped: tag `v0.12.0` on `f50e7fe`, 14 release assets, six crates on crates.io, Homebrew
 formula at 0.12.0, downloaded macOS artifact verified. Record: `docs/16102026_release_0_12_0_plan.md`.
 
-## 2026-10-27: percent-encode identifiers in write and delete paths (branch `fix/encode-path-identifiers`)
+## 2026-10-27: percent-encode identifiers in write and delete paths (branch `fix/encode-path-identifiers`, PR #178)
 
 Request paths are built with `format!`, and most write and delete call sites interpolated caller-provided
 identifiers as they were. A `?`, `#` or `/` in such a value can change the request target, and the central

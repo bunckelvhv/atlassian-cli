@@ -1,6 +1,6 @@
 # Identifiers in write and delete request paths are percent-encoded
 
-Status: in review (PR #TBD).
+Status: in review (PR #178).
 
 ## Problem
 
