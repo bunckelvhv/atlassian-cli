@@ -159,9 +159,10 @@ add_labels_bulk() {
 delete_pages_bulk() {
     local cql="$1"
 
-    # Without --execute, `bulk delete` only lists what it would act on. The
-    # listing is also what the count comes from, so the number confirmed below
-    # is the number that is deleted (one search page, at most 1000 pages).
+    # Without --execute, `bulk delete` only lists what it would act on, so the
+    # listing is used for the count shown below (one search page, at most 1000
+    # pages). The executing call further down is a separate process that runs
+    # its own search, so its result can differ if pages change in between.
     local count
     count=$(atlassian-cli --profile "$PROFILE" confluence bulk delete \
         --cql "$cql" \

@@ -113,15 +113,71 @@ async fn listing_is_the_default_and_deletes_nothing() {
         "listing failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    for expected in ["101", "Old roadmap", "102", "Old notes"] {
-        assert!(stdout.contains(expected), "missing {expected}: {stdout}");
-    }
+    let listed: Vec<serde_json::Value> =
+        serde_json::from_slice(&out.stdout).expect("stdout should be a JSON array");
+    let summary: Vec<(&str, &str, &str)> = listed
+        .iter()
+        .map(|row| {
+            (
+                row["id"].as_str().unwrap_or_default(),
+                row["title"].as_str().unwrap_or_default(),
+                row["action"].as_str().unwrap_or_default(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        vec![
+            ("101", "Old roadmap", "would delete"),
+            ("102", "Old notes", "would delete")
+        ]
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("--execute"),
         "the listing should say how to delete: {stderr}"
     );
+    assert!(delete_paths(&server).await.is_empty());
+}
+
+/// A search hit without a title is still listed, by ID alone.
+#[tokio::test]
+async fn a_page_without_a_title_is_listed_by_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path_matcher("/wiki/rest/api/content/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "results": [
+                { "content": { "id": "201" } },
+                { "content": { "id": "202", "title": null } }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    mock_delete(&server, 0).await;
+
+    let dir = TempDir::new().unwrap();
+    let config = write_config(dir.path(), &server.uri());
+
+    let out = run(
+        &config,
+        &["-f", "json", "confluence", "bulk", "delete", "--cql", CQL],
+    );
+
+    assert!(
+        out.status.success(),
+        "listing failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let listed: Vec<serde_json::Value> =
+        serde_json::from_slice(&out.stdout).expect("stdout should be a JSON array");
+    let ids: Vec<&str> = listed
+        .iter()
+        .map(|row| row["id"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(ids, vec!["201", "202"]);
+    assert!(listed.iter().all(|row| row["title"] == ""));
     assert!(delete_paths(&server).await.is_empty());
 }
 

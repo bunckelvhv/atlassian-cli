@@ -55,6 +55,8 @@ For scripts the migration is mechanical: add `--execute --yes` where the old
 call deleted. `docs/examples/confluence/bulk-cleanup.sh` does this after its own
 typed confirmation, and takes its page count from the listing of the same
 command.
+The count is only a preview: the executing call is a separate process with its
+own search, so pages that change in between can change what is deleted.
 
 ## Limitations
 
@@ -97,6 +99,7 @@ explicit expected request count:
 
 - `listing_is_the_default_and_deletes_nothing`
 - `yes_without_execute_still_only_lists`
+- `a_page_without_a_title_is_listed_by_id`
 - `deprecated_dry_run_still_lists`
 - `dry_run_and_execute_are_rejected_together`
 - `execute_without_a_terminal_or_yes_refuses_and_deletes_nothing`

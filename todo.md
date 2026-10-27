@@ -3208,4 +3208,3 @@ confirmation and `--yes` delete every match, no matches asks nothing. End-to-end
 `--yes` without `--execute`, deprecated `--dry-run`, `--dry-run --execute` rejected by clap,
 `--execute` refused without `--yes`, `--execute --yes` deletes. Breaking change for scripts: they
 must pass `--execute --yes`.
-
