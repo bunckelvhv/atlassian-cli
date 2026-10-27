@@ -70,6 +70,12 @@ error. A mistyped or empty variable can no longer turn `set` into "clear all
 labels". Clearing labels in bulk was never a documented use, and doing it by
 omission is the hazard being removed.
 
+### No match
+
+When the query matches nothing, the three commands render an empty list through
+`render_list_or_empty`, as a non-empty preview renders its rows. The table format
+prints "No issues found matching query", and `-f json` prints `[]`.
+
 ### Transitions resolved per issue
 
 `plan_transitions` reads the transitions of every matching issue and resolves
@@ -77,20 +83,30 @@ the request on each one. The decision is a pure function,
 `resolve_transition(available, request)`, which returns the transition ID, its
 name and the target status (`to.name`), or `None`.
 
-- **A name** is compared case-insensitively on each issue.
-- **An ID** is pinned to the name it has on the first issue
-  (`TransitionRequest::from_first_issue`). On every other issue it is only used if
-  the ID exists there with the same name. Otherwise that issue is an error.
-- **Neither matches on the first issue:** the value is kept as a name. It then
-  only resolves where a transition has exactly that name, so nothing runs on a
-  guess. A numeric value that no first-issue transition has as an ID or name
-  therefore resolves nowhere.
+- **A name** is compared case-insensitively on each issue, Unicode aware
+  (`CAFÉ` matches `café`).
+- **An ID** is a value that equals a transition ID on the first issue
+  (`TransitionRequest::from_first_issue`). It is pinned to the name it has there.
+  On every other issue it is only used if the ID exists with the same name.
+  Otherwise that issue is an error.
+- **Precedence on the first issue.** An ID match is checked first. If the same
+  value is also the name of a *different* transition there, it is ambiguous and
+  applied to no issue, with an "ambiguous" error per issue. If it is the name of
+  the same transition (ID and name are equal), it is an ID. Without an ID match,
+  a name match means a name, matched on every issue.
+- **No match on the first issue.** A value made only of digits is meant as an ID.
+  A number that is neither an ID nor a name there is applied to no issue, so a
+  transition that happens to be named like that number on a later issue is never
+  run by accident. Any other value is kept as a name and resolves only on issues
+  that have a transition of exactly that name.
 - **No fallback.** An issue that does not offer the transition gets no request.
 
 The first issue is read first because it fixes what an ID means. The others are
-read concurrently with the `--concurrency` setting. A failed read on one of the
-other issues becomes that issue's error. A failed read on the first issue aborts,
-because nothing can be resolved without it.
+read concurrently with the `--concurrency` setting. A failed read never aborts
+the run, it is that issue's error. If the first issue cannot be read, a name is
+still resolved independently on every other issue, while a number is applied to
+no issue, because its meaning cannot be established. When a request is applied to
+no issue, the other issues are not read at all.
 
 The same plan feeds the preview, the confirmation and the execution, so the
 transition shown is the transition sent, and the confirmation names how many
@@ -111,9 +127,9 @@ from the search response, not from the command line.
   issue whose status changes while the prompt waits can reject the request. That
   issue is reported as a failure and nothing else is affected.
 - **An ID is tied to the first issue.** If the first issue does not offer the ID,
-  the value is treated as a name and normally matches nothing. Use the transition
-  name for queries that span workflows, or order the query so a suitable issue
-  comes first.
+  or cannot be read, a number is applied to no issue. Use the transition name for
+  queries that span workflows, or order the query so a suitable issue comes
+  first.
 - **Two transitions with the same name on one issue.** The first one in Jira's
   list is used, as before. Jira does not promise an order.
 - **Search is capped at 1000 issues, as before.** The count in the prompt is the
@@ -128,27 +144,42 @@ from the search response, not from the command line.
 Resolution, in `jira/bulk.rs` (no HTTP):
 
 - `a_name_is_matched_case_insensitively`
+- `a_name_match_is_unicode_aware`
 - `a_transition_that_is_not_offered_does_not_resolve`
 - `an_id_only_resolves_where_it_keeps_its_name`
 - `the_first_issue_decides_what_an_id_means`
-- `an_unknown_value_stays_a_name`
+- `an_unknown_name_stays_a_name`
+- `an_unknown_number_is_applied_to_no_issue`
+- `a_number_that_is_a_name_on_the_first_issue_is_a_name`
+- `an_id_that_is_also_another_transitions_name_is_ambiguous`
+- `an_id_that_is_also_its_own_name_is_not_ambiguous`
+- `an_unreadable_first_issue_keeps_ids_closed_and_names_open`
 - `normalize_labels_trims_and_drops_empty_values`
 - `the_preview_shows_transition_and_target_status_per_issue`
 
 The handlers over a `wiremock` server, in `jira/bulk.rs`. Two workflows, where ID
-`21` is "In Progress" once and "Done" once:
+`21` is "In Progress" once and "Done" once. The runs that must not write mount
+their mutation mocks with `expect(0)`, which wiremock verifies when the server is
+dropped:
 
 - `a_transition_name_is_resolved_on_each_issue`: each issue gets its own ID.
 - `an_id_is_not_sent_to_an_issue_where_it_means_something_else`
 - `an_issue_without_the_transition_fails_and_the_others_still_run`
 - `a_failed_lookup_on_one_issue_does_not_stop_the_others`
-- `plans_keep_the_order_of_the_search_result`
+- `an_unreadable_first_issue_does_not_stop_a_name_on_the_others`
+- `an_unreadable_first_issue_is_one_row_of_the_preview`
+- `an_unreadable_first_issue_closes_an_id_for_every_issue`
+- `an_ambiguous_value_is_applied_to_no_issue`
+- `plans_keep_the_order_of_the_search_result`: three issues, the second answers
+  late, so the order only holds because of the explicit sort.
+- `the_target_status_is_resolved_per_issue`
 - `transition_lists_by_default_and_sends_no_transition`
 - `assign_lists_by_default_and_changes_nothing`
 - `assign_with_execute_and_yes_assigns_every_issue`
 - `label_lists_by_default_and_changes_nothing`
 - `label_set_with_execute_and_yes_writes_the_given_labels`
 - `label_without_labels_is_an_error_and_sends_nothing`
+- `no_match_is_a_no_op_for_every_command`
 
 The built binary against a mock Jira, in `crates/cli/tests/jira_bulk_safety_e2e.rs`.
 The binary has no terminal on stdin there, which is what a script looks like:
@@ -159,13 +190,17 @@ The binary has no terminal on stdin there, which is what a script looks like:
 - `transition_by_name_runs_the_matching_transition_on_each_issue`
 - `transition_by_id_is_an_error_where_the_id_means_something_else`
 - `transition_unavailable_on_one_issue_fails_but_the_others_are_transitioned`
+- `an_unreadable_first_issue_does_not_stop_a_transition_name`
+- `an_unreadable_first_issue_sends_no_transition_for_an_id`
+- `an_ambiguous_transition_value_sends_nothing`
 - `assign_lists_by_default`, `assign_execute_without_yes_and_without_a_terminal_is_refused`,
   `assign_execute_with_yes_assigns_every_issue`
 - `label_lists_by_default`, `label_execute_without_yes_and_without_a_terminal_is_refused`,
   `label_execute_with_yes_writes_the_labels`
 - `label_without_labels_is_rejected_for_every_action`
+- `no_match_renders_an_empty_json_list_for_every_command`
 - `the_deprecated_dry_run_flag_still_lists_only`
-- `dry_run_cannot_be_combined_with_execute`
+- `dry_run_cannot_be_combined_with_execute`: also checks the clap message
 - `yes_alone_does_not_execute`
 
 The README and the example scripts under `docs/examples/jira/` are checked by

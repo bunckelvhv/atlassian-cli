@@ -3207,3 +3207,10 @@ handlers over wiremock (two workflows where ID 21 is "In Progress" once and "Don
 PUT without `--execute`). New `crates/cli/tests/jira_bulk_safety_e2e.rs` drives the binary without a
 terminal: refusal of `--execute` without `--yes`, `--execute --yes` writes, the preview output,
 `--labels` validation, `--dry-run` and its conflict with `--execute`.
+
+Review round 1: a transition value that is an ID and also the name of another transition on the
+first issue is ambiguous and applied to no issue, a number that matches nothing on the first issue
+is applied to no issue, name matching is Unicode aware, an unreadable first issue no longer aborts
+a transition given by name (an ID stays closed), zero matches render an empty list through
+`render_list_or_empty` (`[]` under `-f json`), and the preview and refusal tests mount their
+mutation mocks with `expect(0)`.
