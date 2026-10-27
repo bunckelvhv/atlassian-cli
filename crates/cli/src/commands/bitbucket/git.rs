@@ -156,7 +156,7 @@ pub fn parse_git_remote(url: &str) -> Option<(String, String)> {
 /// or the URL has no `//` authority.
 fn raw_path(url: &str) -> Option<&str> {
     let rest = &url[url.find("://")? + 3..];
-    let end = rest.find(|c: char| matches!(c, '/' | '\\' | '?' | '#'))?;
+    let end = rest.find(['/', '\\', '?', '#'])?;
     let path = &rest[end..];
     path.starts_with('/').then_some(path)
 }
