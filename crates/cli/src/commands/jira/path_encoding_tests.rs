@@ -184,3 +184,40 @@ async fn identifiers_spanning_segments_are_refused_without_a_request() {
 
     assert!(received(&server).await.is_empty());
 }
+
+/// Values that are legal in real identifiers reach the server as documented
+/// escapes, and an existing `%2F` is sent literally, not decoded.
+#[tokio::test]
+async fn compatibility_values_are_encoded_as_documented() {
+    let cases = [
+        ("user@example.test", "user%40example.test"),
+        ("5b:1", "5b%3A1"),
+        ("{abc-123}", "%7Babc-123%7D"),
+        ("função", "fun%C3%A7%C3%A3o"),
+        ("%2F", "%252F"),
+    ];
+
+    for (value, encoded) in cases {
+        let server = MockServer::start().await;
+        mock_all_methods(&server).await;
+        let renderer = OutputRenderer::new(OutputFormat::Json);
+        let ctx = JiraContext {
+            client: ApiClient::new(server.uri()).unwrap(),
+            renderer: &renderer,
+        };
+
+        super::issues::delete_comment(&ctx, value, "10100")
+            .await
+            .unwrap();
+
+        assert_eq!(
+            received(&server).await,
+            vec![(
+                "DELETE".to_string(),
+                format!("/rest/api/3/issue/{encoded}/comment/10100"),
+                None
+            )],
+            "{value:?}"
+        );
+    }
+}
