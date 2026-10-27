@@ -15,6 +15,9 @@ mod search;
 mod spaces;
 pub mod utils;
 
+#[cfg(test)]
+mod path_encoding_tests;
+
 use utils::ConfluenceContext;
 
 #[derive(Args, Debug, Clone)]

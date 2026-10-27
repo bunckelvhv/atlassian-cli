@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use atlassian_cli_output::OutputFormat;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -207,9 +208,10 @@ pub async fn update_page(
     message: Option<&str>,
 ) -> Result<()> {
     // Get current page first to get version and status
+    let page_path = format!("/wiki/api/v2/pages/{}", encode_path_segment(page_id)?);
     let current: Value = ctx
         .client
-        .get(&format!("/wiki/api/v2/pages/{}", page_id))
+        .get(&page_path)
         .await
         .with_context(|| format!("Failed to get page {}", page_id))?;
 
@@ -278,7 +280,7 @@ pub async fn update_page(
 
     let _: Value = ctx
         .client
-        .put(&format!("/wiki/api/v2/pages/{}", page_id), &payload)
+        .put(&page_path, &payload)
         .await
         .with_context(|| format!("Failed to update page {}", page_id))?;
 
@@ -299,9 +301,10 @@ pub async fn publish_page(
     message: Option<&str>,
 ) -> Result<()> {
     // Get current page to verify it's a draft
+    let page_path = format!("/wiki/api/v2/pages/{}", encode_path_segment(page_id)?);
     let current: Value = ctx
         .client
-        .get(&format!("/wiki/api/v2/pages/{}", page_id))
+        .get(&page_path)
         .await
         .with_context(|| format!("Failed to get page {}", page_id))?;
 
@@ -353,7 +356,7 @@ pub async fn publish_page(
 
     let _: Value = ctx
         .client
-        .put(&format!("/wiki/api/v2/pages/{}", page_id), &payload)
+        .put(&page_path, &payload)
         .await
         .with_context(|| format!("Failed to publish page {}", page_id))?;
 
@@ -377,7 +380,10 @@ pub async fn delete_page(ctx: &ConfluenceContext<'_>, page_id: &str, force: bool
 
     let _: Value = ctx
         .client
-        .delete(&format!("/wiki/api/v2/pages/{}", page_id))
+        .delete(&format!(
+            "/wiki/api/v2/pages/{}",
+            encode_path_segment(page_id)?
+        ))
         .await
         .with_context(|| format!("Failed to delete page {}", page_id))?;
 
@@ -440,7 +446,10 @@ pub async fn add_page_label(ctx: &ConfluenceContext<'_>, page_id: &str, label: &
     let _: Value = ctx
         .client
         .post(
-            &format!("/wiki/rest/api/content/{}/label", page_id),
+            &format!(
+                "/wiki/rest/api/content/{}/label",
+                encode_path_segment(page_id)?
+            ),
             &payload,
         )
         .await
@@ -466,7 +475,8 @@ pub async fn remove_page_label(
         .client
         .delete(&format!(
             "/wiki/rest/api/content/{}/label?{}",
-            page_id, query_string
+            encode_path_segment(page_id)?,
+            query_string
         ))
         .await
         .with_context(|| format!("Failed to remove label from page {}", page_id))?;
@@ -863,7 +873,10 @@ pub async fn add_page_restriction(
     let _: Value = ctx
         .client
         .post(
-            &format!("/wiki/rest/api/content/{}/restriction", page_id),
+            &format!(
+                "/wiki/rest/api/content/{}/restriction",
+                encode_path_segment(page_id)?
+            ),
             &payload,
         )
         .await
@@ -894,7 +907,8 @@ pub async fn remove_page_restriction(
         .client
         .delete(&format!(
             "/wiki/rest/api/content/{}/restriction?{}",
-            page_id, query_string
+            encode_path_segment(page_id)?,
+            query_string
         ))
         .await
         .with_context(|| format!("Failed to remove restriction from page {}", page_id))?;
@@ -1089,9 +1103,13 @@ pub async fn update_blogpost(
     message: Option<&str>,
 ) -> Result<()> {
     // Get current blog post first to get version and status
+    let blogpost_path = format!(
+        "/wiki/api/v2/blogposts/{}",
+        encode_path_segment(blogpost_id)?
+    );
     let current: Value = ctx
         .client
-        .get(&format!("/wiki/api/v2/blogposts/{}", blogpost_id))
+        .get(&blogpost_path)
         .await
         .with_context(|| format!("Failed to get blog post {}", blogpost_id))?;
 
@@ -1160,7 +1178,7 @@ pub async fn update_blogpost(
 
     let _: Value = ctx
         .client
-        .put(&format!("/wiki/api/v2/blogposts/{}", blogpost_id), &payload)
+        .put(&blogpost_path, &payload)
         .await
         .with_context(|| format!("Failed to update blog post {}", blogpost_id))?;
 
@@ -1181,9 +1199,13 @@ pub async fn publish_blogpost(
     message: Option<&str>,
 ) -> Result<()> {
     // Get current blog post to verify it's a draft
+    let blogpost_path = format!(
+        "/wiki/api/v2/blogposts/{}",
+        encode_path_segment(blogpost_id)?
+    );
     let current: Value = ctx
         .client
-        .get(&format!("/wiki/api/v2/blogposts/{}", blogpost_id))
+        .get(&blogpost_path)
         .await
         .with_context(|| format!("Failed to get blog post {}", blogpost_id))?;
 
@@ -1235,7 +1257,7 @@ pub async fn publish_blogpost(
 
     let _: Value = ctx
         .client
-        .put(&format!("/wiki/api/v2/blogposts/{}", blogpost_id), &payload)
+        .put(&blogpost_path, &payload)
         .await
         .with_context(|| format!("Failed to publish blog post {}", blogpost_id))?;
 
@@ -1269,7 +1291,10 @@ pub async fn delete_blogpost(
 
     let _: Value = ctx
         .client
-        .delete(&format!("/wiki/api/v2/blogposts/{}", blogpost_id))
+        .delete(&format!(
+            "/wiki/api/v2/blogposts/{}",
+            encode_path_segment(blogpost_id)?
+        ))
         .await
         .with_context(|| format!("Failed to delete blog post {}", blogpost_id))?;
 

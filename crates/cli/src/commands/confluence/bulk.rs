@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use atlassian_cli_bulk::BulkExecutor;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -40,7 +41,7 @@ pub async fn bulk_delete_pages(
             let client = client.clone();
             async move {
                 let _: Value = client
-                    .delete(&format!("/wiki/api/v2/pages/{}", id))
+                    .delete(&format!("/wiki/api/v2/pages/{}", encode_path_segment(&id)?))
                     .await
                     .with_context(|| format!("Failed to delete page {}", id))?;
                 tracing::info!(%id, "Page deleted successfully");
@@ -96,7 +97,7 @@ pub async fn bulk_add_labels(
 
                 let _: Value = client
                     .post(
-                        &format!("/wiki/rest/api/content/{}/label", id),
+                        &format!("/wiki/rest/api/content/{}/label", encode_path_segment(&id)?),
                         &label_objects,
                     )
                     .await

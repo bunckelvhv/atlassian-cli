@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -93,7 +94,8 @@ pub async fn upload_attachment(
         form
     };
 
-    // Note: This uses the raw reqwest client for multipart upload
+    // Note: This uses the raw reqwest client for multipart upload, so the
+    // central path guard does not run. The page id is encoded here instead.
     // base_url() keeps its trailing slash, so trim before joining.
     let base_url = ctx.client.base_url().trim_end_matches('/');
 
@@ -102,7 +104,8 @@ pub async fn upload_attachment(
         .http_client()
         .post(format!(
             "{}/wiki/rest/api/content/{}/child/attachment",
-            base_url, page_id
+            base_url,
+            encode_path_segment(page_id)?
         ))
         .multipart(form)
         .header("X-Atlassian-Token", "no-check");
@@ -212,7 +215,10 @@ pub async fn delete_attachment(
 
     let _: Value = ctx
         .client
-        .delete(&format!("/wiki/api/v2/attachments/{}", attachment_id))
+        .delete(&format!(
+            "/wiki/api/v2/attachments/{}",
+            encode_path_segment(attachment_id)?
+        ))
         .await
         .with_context(|| format!("Failed to delete attachment {}", attachment_id))?;
 
