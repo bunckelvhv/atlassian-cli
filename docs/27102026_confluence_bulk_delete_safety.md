@@ -1,6 +1,6 @@
 # `confluence bulk delete`: listing by default and a confirmation gate
 
-Status: in review (PR #TBD).
+Status: in review (PR #176).
 
 ## Problem
 

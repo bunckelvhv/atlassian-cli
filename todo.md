@@ -3180,7 +3180,7 @@ Changelog promoted to `## [0.12.0] - 2026-10-16` (one entry, the comment visibil
 an observable change (`comments update` without a visibility flag reads before it writes). Shipped: tag `v0.12.0` on `f50e7fe`, 14 release assets, six crates on crates.io, Homebrew
 formula at 0.12.0, downloaded macOS artifact verified. Record: `docs/16102026_release_0_12_0_plan.md`.
 
-## 2026-10-27: confluence bulk delete preview and confirmation (branch `fix/confluence-bulk-delete-confirmation`)
+## 2026-10-27: confluence bulk delete preview and confirmation (branch `fix/confluence-bulk-delete-confirmation`, PR #176)
 
 `confluence bulk delete` deleted every page a CQL query matched as soon as it ran, up to one
 search page of 1000. It asked nothing, and without a terminal it deleted all the same. Only the

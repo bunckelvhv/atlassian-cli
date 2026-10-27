@@ -21,7 +21,7 @@ resolve. `git log` remains the complete record.
   effect without `--execute`. `--dry-run` is hidden and deprecated: it behaves
   like the new default and is rejected together with `--execute`. Deleted pages
   go to the Confluence trash, and a run covers at most the first 1000 matches.
-  (#TBD)
+  (#176)
 
 ## [0.12.0] - 2026-10-16
 
