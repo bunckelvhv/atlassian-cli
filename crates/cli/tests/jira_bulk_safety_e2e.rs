@@ -66,6 +66,18 @@ async fn mount_search(server: &MockServer, keys: &[&str]) {
 }
 
 async fn mount_transitions(server: &MockServer, key: &str, transitions: &[Value]) {
+    mount_transitions_expecting(server, key, transitions, None).await;
+}
+
+/// Serve the transitions of `key` and accept a transition POST for it. With
+/// `Some(n)` the server verifies on drop that exactly `n` POSTs arrived
+/// (`Some(0)` for a run that must not write).
+async fn mount_transitions_expecting(
+    server: &MockServer,
+    key: &str,
+    transitions: &[Value],
+    posts: Option<u64>,
+) {
     Mock::given(method("GET"))
         .and(path_matcher(format!("/rest/api/3/issue/{key}/transitions")))
         .respond_with(
@@ -73,33 +85,46 @@ async fn mount_transitions(server: &MockServer, key: &str, transitions: &[Value]
         )
         .mount(server)
         .await;
-    Mock::given(method("POST"))
+    let post = Mock::given(method("POST"))
         .and(path_matcher(format!("/rest/api/3/issue/{key}/transitions")))
-        .respond_with(ResponseTemplate::new(204))
-        .mount(server)
-        .await;
+        .respond_with(ResponseTemplate::new(204));
+    match posts {
+        Some(expected) => post.expect(expected).mount(server).await,
+        None => post.mount(server).await,
+    }
 }
 
 /// Two workflows in one result: ID 21 starts work in A-1 and finishes in B-1.
 async fn two_workflow_server() -> MockServer {
+    two_workflow_server_expecting(None).await
+}
+
+/// The same server for runs that must not write.
+async fn read_only_two_workflow_server() -> MockServer {
+    two_workflow_server_expecting(Some(0)).await
+}
+
+async fn two_workflow_server_expecting(posts: Option<u64>) -> MockServer {
     let server = MockServer::start().await;
     mount_search(&server, &["A-1", "B-1"]).await;
-    mount_transitions(
+    mount_transitions_expecting(
         &server,
         "A-1",
         &[
             transition("21", "Start progress", "In Progress"),
             transition("31", "Finish", "Done"),
         ],
+        posts,
     )
     .await;
-    mount_transitions(
+    mount_transitions_expecting(
         &server,
         "B-1",
         &[
             transition("21", "Finish", "Done"),
             transition("11", "Start progress", "In Progress"),
         ],
+        posts,
     )
     .await;
     server
@@ -107,14 +132,30 @@ async fn two_workflow_server() -> MockServer {
 
 /// Two issues that accept an assignee change and a label update.
 async fn writable_server() -> MockServer {
+    writable_server_expecting(None).await
+}
+
+/// The same server for runs that must not write: it verifies on drop that no
+/// PUT arrived.
+async fn read_only_server() -> MockServer {
+    writable_server_expecting(Some(0)).await
+}
+
+async fn mount_put(server: &MockServer, request_path: String, puts: Option<u64>) {
+    let mock = Mock::given(method("PUT"))
+        .and(path_matcher(request_path))
+        .respond_with(ResponseTemplate::new(204));
+    match puts {
+        Some(expected) => mock.expect(expected).mount(server).await,
+        None => mock.mount(server).await,
+    }
+}
+
+async fn writable_server_expecting(puts: Option<u64>) -> MockServer {
     let server = MockServer::start().await;
     mount_search(&server, &["A-1", "B-1"]).await;
     for key in ["A-1", "B-1"] {
-        Mock::given(method("PUT"))
-            .and(path_matcher(format!("/rest/api/3/issue/{key}/assignee")))
-            .respond_with(ResponseTemplate::new(204))
-            .mount(&server)
-            .await;
+        mount_put(&server, format!("/rest/api/3/issue/{key}/assignee"), puts).await;
         Mock::given(method("GET"))
             .and(path_matcher(format!("/rest/api/3/issue/{key}")))
             .respond_with(
@@ -123,11 +164,7 @@ async fn writable_server() -> MockServer {
             )
             .mount(&server)
             .await;
-        Mock::given(method("PUT"))
-            .and(path_matcher(format!("/rest/api/3/issue/{key}")))
-            .respond_with(ResponseTemplate::new(204))
-            .mount(&server)
-            .await;
+        mount_put(&server, format!("/rest/api/3/issue/{key}"), puts).await;
     }
     server
 }
@@ -161,7 +198,7 @@ fn transition_id_of(body: &Value) -> &str {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn transition_lists_by_default_with_the_status_each_issue_would_reach() {
-    let server = two_workflow_server().await;
+    let server = read_only_two_workflow_server().await;
     let dir = TempDir::new().unwrap();
     let config = write_config(dir.path(), &server.uri());
 
@@ -203,8 +240,20 @@ async fn transition_lists_by_default_with_the_status_each_issue_would_reach() {
 async fn transition_preview_reports_issues_where_it_is_not_available() {
     let server = MockServer::start().await;
     mount_search(&server, &["A-1", "B-1"]).await;
-    mount_transitions(&server, "A-1", &[transition("31", "Finish", "Done")]).await;
-    mount_transitions(&server, "B-1", &[transition("11", "Reopen", "To Do")]).await;
+    mount_transitions_expecting(
+        &server,
+        "A-1",
+        &[transition("31", "Finish", "Done")],
+        Some(0),
+    )
+    .await;
+    mount_transitions_expecting(
+        &server,
+        "B-1",
+        &[transition("11", "Reopen", "To Do")],
+        Some(0),
+    )
+    .await;
     let dir = TempDir::new().unwrap();
     let config = write_config(dir.path(), &server.uri());
 
@@ -233,7 +282,7 @@ async fn transition_preview_reports_issues_where_it_is_not_available() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn transition_execute_without_yes_and_without_a_terminal_is_refused() {
-    let server = two_workflow_server().await;
+    let server = read_only_two_workflow_server().await;
     let dir = TempDir::new().unwrap();
     let config = write_config(dir.path(), &server.uri());
 
@@ -372,7 +421,7 @@ async fn transition_unavailable_on_one_issue_fails_but_the_others_are_transition
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn assign_lists_by_default() {
-    let server = writable_server().await;
+    let server = read_only_server().await;
     let dir = TempDir::new().unwrap();
     let config = write_config(dir.path(), &server.uri());
 
@@ -401,7 +450,7 @@ async fn assign_lists_by_default() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn assign_execute_without_yes_and_without_a_terminal_is_refused() {
-    let server = writable_server().await;
+    let server = read_only_server().await;
     let dir = TempDir::new().unwrap();
     let config = write_config(dir.path(), &server.uri());
 
@@ -455,7 +504,7 @@ async fn assign_execute_with_yes_assigns_every_issue() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn label_lists_by_default() {
-    let server = writable_server().await;
+    let server = read_only_server().await;
     let dir = TempDir::new().unwrap();
     let config = write_config(dir.path(), &server.uri());
 
@@ -486,7 +535,7 @@ async fn label_lists_by_default() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn label_execute_without_yes_and_without_a_terminal_is_refused() {
-    let server = writable_server().await;
+    let server = read_only_server().await;
     let dir = TempDir::new().unwrap();
     let config = write_config(dir.path(), &server.uri());
 
@@ -546,7 +595,7 @@ async fn label_execute_with_yes_writes_the_labels() {
 /// `set` without labels used to send `labels: []` for every match.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn label_without_labels_is_rejected_for_every_action() {
-    let server = writable_server().await;
+    let server = read_only_server().await;
     let dir = TempDir::new().unwrap();
     let config = write_config(dir.path(), &server.uri());
 
@@ -601,7 +650,7 @@ async fn label_without_labels_is_rejected_for_every_action() {
 /// "change nothing".
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_deprecated_dry_run_flag_still_lists_only() {
-    let server = two_workflow_server().await;
+    let server = read_only_two_workflow_server().await;
     let dir = TempDir::new().unwrap();
     let config = write_config(dir.path(), &server.uri());
 
@@ -625,7 +674,7 @@ async fn the_deprecated_dry_run_flag_still_lists_only() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn dry_run_cannot_be_combined_with_execute() {
-    let server = writable_server().await;
+    let server = read_only_server().await;
     let dir = TempDir::new().unwrap();
     let config = write_config(dir.path(), &server.uri());
 
@@ -640,14 +689,152 @@ async fn dry_run_cannot_be_combined_with_execute() {
         args.extend(["--jql", "project = X", "--dry-run", "--execute", "--yes"]);
         let out = run(&config, &args);
         assert_eq!(out.status.code(), Some(2), "{sub:?}: {}", stderr(&out));
+        assert!(
+            stderr(&out).contains("cannot be used with"),
+            "{sub:?} must fail on the conflict itself: {}",
+            stderr(&out)
+        );
     }
     assert!(writes(&server).await.is_empty());
+}
+
+/// Nothing matches: `-f json` gets an empty list, the same as a non-empty
+/// preview gets a list, not prose.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_match_renders_an_empty_json_list_for_every_command() {
+    let server = MockServer::start().await;
+    mount_search(&server, &[]).await;
+    let dir = TempDir::new().unwrap();
+    let config = write_config(dir.path(), &server.uri());
+
+    let cases: [&[&str]; 3] = [
+        &["transition", "--transition", "Finish"],
+        &["assign", "--assignee", "acc-1"],
+        &["label", "--action", "add", "--labels", "a"],
+    ];
+    for sub in cases {
+        let mut args = vec!["jira", "bulk"];
+        args.extend(sub.iter().copied());
+        args.extend(["--jql", "project = X", "-f", "json"]);
+        let out = run(&config, &args);
+        assert!(out.status.success(), "{sub:?}: {}", stderr(&out));
+        let parsed: Value = serde_json::from_str(&stdout(&out))
+            .unwrap_or_else(|e| panic!("{sub:?}: not JSON ({e}): {}", stdout(&out)));
+        assert_eq!(parsed, json!([]), "{sub:?}");
+    }
+    assert!(writes(&server).await.is_empty());
+}
+
+/// Three issues where the first one's transitions cannot be read.
+async fn server_with_unreadable_first_issue(posts: Option<u64>) -> MockServer {
+    let server = MockServer::start().await;
+    mount_search(&server, &["A-1", "B-1", "C-1"]).await;
+    // A-1 has no transitions mock, so its lookup answers 404.
+    mount_transitions_expecting(&server, "B-1", &[transition("21", "Done", "Done")], posts).await;
+    mount_transitions_expecting(&server, "C-1", &[transition("21", "Done", "Done")], posts).await;
+    server
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_unreadable_first_issue_does_not_stop_a_transition_name() {
+    let server = server_with_unreadable_first_issue(None).await;
+    let dir = TempDir::new().unwrap();
+    let config = write_config(dir.path(), &server.uri());
+
+    let out = run(
+        &config,
+        &[
+            "jira",
+            "bulk",
+            "transition",
+            "--jql",
+            "project = X",
+            "--transition",
+            "Done",
+            "--execute",
+            "--yes",
+        ],
+    );
+
+    assert!(!out.status.success(), "the first issue is an error");
+    assert!(stderr(&out).contains("A-1"), "{}", stderr(&out));
+    let paths: Vec<String> = writes(&server).await.into_iter().map(|w| w.0).collect();
+    assert_eq!(
+        paths,
+        vec![
+            "/rest/api/3/issue/B-1/transitions",
+            "/rest/api/3/issue/C-1/transitions"
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_unreadable_first_issue_sends_no_transition_for_an_id() {
+    let server = server_with_unreadable_first_issue(Some(0)).await;
+    let dir = TempDir::new().unwrap();
+    let config = write_config(dir.path(), &server.uri());
+
+    let out = run(
+        &config,
+        &[
+            "jira",
+            "bulk",
+            "transition",
+            "--jql",
+            "project = X",
+            "--transition",
+            "21",
+            "--execute",
+            "--yes",
+        ],
+    );
+
+    assert!(
+        !out.status.success(),
+        "an ID with no known meaning must fail"
+    );
+    assert!(writes(&server).await.is_empty(), "no POST at all");
+}
+
+/// "21" is the ID of one transition and the name of another on the first
+/// issue: nothing runs and the error says why.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_ambiguous_transition_value_sends_nothing() {
+    let server = MockServer::start().await;
+    mount_search(&server, &["A-1", "B-1"]).await;
+    let ambiguous = [
+        transition("21", "Start", "In Progress"),
+        transition("22", "21", "Done"),
+    ];
+    mount_transitions_expecting(&server, "A-1", &ambiguous, Some(0)).await;
+    mount_transitions_expecting(&server, "B-1", &ambiguous, Some(0)).await;
+    let dir = TempDir::new().unwrap();
+    let config = write_config(dir.path(), &server.uri());
+
+    let out = run(
+        &config,
+        &[
+            "jira",
+            "bulk",
+            "transition",
+            "--jql",
+            "project in (A, B)",
+            "--transition",
+            "21",
+            "--execute",
+            "--yes",
+        ],
+    );
+
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("ambiguous"), "{}", stderr(&out));
+    assert!(writes(&server).await.is_empty(), "no POST at all");
 }
 
 /// `--yes` only skips the prompt. It does not turn a listing into a change.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn yes_alone_does_not_execute() {
-    let server = writable_server().await;
+    let server = read_only_server().await;
     let dir = TempDir::new().unwrap();
     let config = write_config(dir.path(), &server.uri());
 

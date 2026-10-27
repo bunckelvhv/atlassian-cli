@@ -801,9 +801,11 @@ enum BulkCommands {
         /// JQL query to select issues
         #[arg(long)]
         jql: String,
-        /// Transition name or ID. The transition is resolved on each issue
-        /// separately. A name is matched on every issue. An ID is applied only
-        /// where it has the same name as on the first matching issue
+        /// Transition name or ID, resolved on each issue separately. A name is
+        /// matched on every issue, ignoring case. A value that is a transition
+        /// ID on the first matching issue is applied only where that ID has the
+        /// same name. If it is also the name of another transition there, or if
+        /// it is a number that matches nothing there, it is applied to no issue
         #[arg(long)]
         transition: String,
         /// Apply the change. Without this, the issues are only listed
