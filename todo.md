@@ -3196,8 +3196,10 @@ set and rejects empty values, `/`, `.` and `..` with the new `ApiError::InvalidI
 Bitbucket, Jira, Confluence, JSM, Opsgenie and Bamboo command modules; reads that feed a write share the
 encoded path, and two query values (`roles remove-actor --user`, `watchers remove`) use
 `encode_query_component`. `opsgenie heartbeat get` and `ping` are encoded too.
-`bitbucket/git.rs::parse_path_segments` accepts a workspace and slug only if they match the Bitbucket
-character set and are not dot segments; otherwise it returns `None` and logs at debug level.
+`bitbucket/git.rs::parse_git_remote` accepts a workspace and slug only if they match the Bitbucket
+character set and are not dot segments, and validates the path as written in the remote (a query,
+fragment, backslash, control character or dot segment is rejected before the URL parser can hide it);
+otherwise it returns `None` and logs a fixed reason at debug level.
 Read-only requests, the raw `api` passthrough and a few query values are left as they were, listed in
 `docs/27102026_path_identifier_encoding.md`.
 
@@ -3206,4 +3208,4 @@ Unit tests for the helper and for `parse_path_segments` (valid remotes, names wi
 New `path_encoding_tests.rs` modules per product, with wiremock, assert the received path: `bb pr
 reopen-comment`, `jira roles remove-actor`, Jira comment delete and watcher remove, Confluence label remove
 and attachment upload, `opsgenie team remove-member`, heartbeat get and ping, Bamboo label remove and JSM
-feedback delete. Rejected values must produce no request.
+feedback delete. Rejected values must not produce the write request.

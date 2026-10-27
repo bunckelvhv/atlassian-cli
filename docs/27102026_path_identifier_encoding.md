@@ -78,11 +78,12 @@ delimiter and are not encoded.
 
 Three details worth knowing:
 
-- Where a command reads a resource before it writes it (`jira issue comments
-  update`, `confluence page update`, `publish`, the blog post and space
-  equivalents), the read uses the same encoded path as the write. Otherwise the
-  version number for the write could come from a different resource than the one
-  the write addresses.
+- Where a command reads a resource and then writes it through the same path
+  variable, the read uses the encoded path as well: `bb pr update`,
+  `bb pr reviewers --add`, `jira issue comments update`, `confluence page
+  update` and `publish`, `confluence blog update` and `publish`, and
+  `confluence space update`. Otherwise the version number or content for the
+  write could come from a different resource than the one the write addresses.
 - Where an identifier is sent as a query value (`jira roles remove-actor --user`,
   `jira issue watchers remove`), the value goes through
   `query::encode_query_component`, so it cannot add parameters.
@@ -96,12 +97,29 @@ name containing `/` reached the mutating ping endpoint.
 
 ### Git remote detection
 
-`bitbucket/git.rs::parse_path_segments` now accepts a workspace and a repository
+`bitbucket/git.rs::parse_git_remote` now accepts a workspace and a repository
 slug only if every character is a letter, a digit, `-`, `_` or `.`, and neither
 is `.` or `..`. Anything else is treated as "not a Bitbucket remote": the
-function returns `None` and logs at debug level. HTTPS and SSH remotes share the
-check. A remote with a name outside the set is therefore never used to fill in
-`--workspace` or `--repo`.
+function returns `None` and logs a fixed reason at debug level. The log never
+contains the remote URL, which may carry credentials.
+
+The path is validated as it was written, because the URL parser would otherwise
+hide the problem: it moves `?` and `#` out of the path, resolves `.` and `..`
+segments, and turns backslashes into separators. For HTTPS and `ssh://` remotes
+the parser is still used for the authority (user info, port, host), and a
+remote is rejected when:
+
+- its URL has a query or a fragment;
+- the raw spelling contains a control character, a backslash, or leading or
+  trailing whitespace;
+- the path as written contains `?` or `#`;
+- a segment is `.` or `..`, or one of their percent-encoded spellings, in any
+  position;
+- the workspace or slug is empty or outside the character set.
+
+The scp-style `git@bitbucket.org:workspace/repo.git` form goes through the same
+path checks. A remote that is rejected is never used to fill in `--workspace` or
+`--repo`.
 
 ## Limitations
 
@@ -112,10 +130,19 @@ What this change deliberately leaves alone:
   `bb repo get`, the Bamboo and Opsgenie getters). A read cannot modify a
   resource. The exceptions are the reads that feed a write, listed above, and
   `opsgenie heartbeat get`.
-- **Reads inside bulk Jira commands.** `jira bulk label` reads
-  `/rest/api/3/issue/{key}?fields=labels` and `jira bulk transition` reads the
-  transitions of the first issue before the encoded writes. Both still use the
-  raw key from the search result.
+- **Reads that feed writes and still use the raw identifier.** The identifiers
+  in these reads come from search or listing results, or from the same
+  command-line argument that the write then encodes:
+    - `jira bulk label` reads each issue's labels before the encoded write, and
+      `jira bulk transition` discovers the transition id from the first issue;
+    - `jira issue transition` discovers the available transitions and reads the
+      current status before the encoded transition write;
+    - `bb bulk` repository and branch listings that decide what to change;
+    - `bb pipeline rerun` looks the pipeline up through `pipelines/list.rs`
+      before it posts.
+
+  A raw identifier in such a read can only fetch other data; the write that
+  follows is encoded, or refused.
 - **Query values.** Only the two query values named above are encoded.
   `bamboo build run --stage` and `--revision` are still placed in the query
   string as written, and so are date arguments of the Opsgenie on-call and
@@ -132,11 +159,11 @@ What this change deliberately leaves alone:
   `accept_safe_identifier` for pipeline identifiers) are kept. The Jira
   attachment upload and delete now also encode the value, which changes nothing
   for the accepted character set.
-- **File size.** `jira/issues.rs` (about 2900 lines) and
-  `bitbucket/pullrequests.rs` are over the 2000 line guideline and were over it
-  before this change. The edits there are in place, and the tests for the
-  mutating commands live in new `path_encoding_tests.rs` modules next to each
-  product instead of in those files. Splitting the large files is a follow-up.
+- **File size.** `jira/issues.rs` (about 2900 lines) is over the 2000 line
+  guideline and was before this change. The edits there are in place. The tests
+  for the mutating commands of every product, including that file's, live in
+  new `path_encoding_tests.rs` modules next to each product. Splitting
+  `jira/issues.rs` is a follow-up.
 - **A segment-based path builder.** The durable alternative to `format!` that
   [08092026_remaining_hardening.md](08092026_remaining_hardening.md) describes
   is still open. This change closes the gap at the write sites without that
@@ -156,9 +183,12 @@ Helper (`crates/api/src/path.rs`):
 
 Git remote (`crates/cli/src/commands/bitbucket/git.rs`):
 
-- valid SSH and HTTPS remotes are detected, including `.`, `-` and `_`;
+- valid SSH and HTTPS remotes are detected, including `.`, `-` and `_`, an
+  `ssh://` remote with a port, and HTTPS remotes with user info or a port;
 - names containing `?`, `#`, `%`, a space, a backslash or `+`, and dot segments,
-  are discarded for SSH and HTTPS.
+  are discarded for SSH and HTTPS;
+- HTTPS and SSH remotes with a raw `?` or `#`, a query or fragment, `/./` or
+  `/../` in any position, a backslash, or a tab or newline are discarded.
 
 Request targets (one `path_encoding_tests.rs` module per product, wiremock, the
 received path is asserted, not just the helper output):
@@ -176,6 +206,11 @@ received path is asserted, not just the helper output):
 - Bamboo and JSM: label remove, plan disable, feedback delete and participant
   remove with delimiters, and refused keys.
 
-In every refused case the mock server records no request, and in every encoded
+In every refused case these tests cover, the mock server records no request, and in every encoded
 case it records exactly one request, to the encoded path and not to the parent
 endpoint.
+
+A compatibility matrix on Jira and Opsgenie asserts the path the server
+receives for values seen in real identifiers: `user@example.test` becomes `%40`,
+`5b:1` becomes `%3A`, `{abc-123}` becomes `%7Babc-123%7D`, non-ASCII text is
+UTF-8 escaped, and a literal `%2F` is sent as `%252F`.

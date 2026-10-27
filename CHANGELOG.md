@@ -17,12 +17,13 @@ resolve. `git log` remains the complete record.
   every product (Bitbucket, Jira, Confluence, JSM, Opsgenie and Bamboo), so a
   value containing `?` or `/` can no longer change which resource a request
   targets. A value that cannot be a single path segment (empty, `.`, `..` or one
-  containing `/`) is refused with an error before any request is sent. This
+  containing `/`) is refused with an error before the write request is sent. This
   includes the Jira and Confluence attachment uploads, which do not go through
   the central path check, and `opsgenie heartbeat get`, where a name ending in
   `/ping` reached the ping endpoint. Bitbucket workspace and repository names
   detected from git remotes are validated and ignored when they use characters
-  outside the Bitbucket name set. (#TBD)
+  outside the Bitbucket name set, or when the remote URL has a query, a
+  fragment or a dot segment. (#TBD)
 
 ## [0.12.0] - 2026-10-16
 
