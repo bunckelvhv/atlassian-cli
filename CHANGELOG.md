@@ -11,9 +11,10 @@ resolve. `git log` remains the complete record.
 
 ## [Unreleased]
 
-## [0.13.0] - 2026-10-28
-
 ### Security
+
+- Update `ctutils` to 0.4.4 to correct RUSTSEC-2026-0385. Update
+  `rustls-webpki` to 0.103.16 to correct RUSTSEC-2026-0382. (#179)
 
 - Identifiers passed to write and delete commands are now percent-encoded in
   every product (Bitbucket, Jira, Confluence, JSM, Opsgenie and Bamboo), so a
@@ -621,8 +622,7 @@ in scripts.
 First release: a Rust CLI for Jira, Confluence and Bitbucket, distributed through
 cargo-dist with a Homebrew tap and a shell installer.
 
-[Unreleased]: https://github.com/omar16100/atlassian-cli/compare/v0.13.0...HEAD
-[0.13.0]: https://github.com/omar16100/atlassian-cli/compare/v0.12.0...v0.13.0
+[Unreleased]: https://github.com/omar16100/atlassian-cli/compare/v0.12.0...HEAD
 [0.12.0]: https://github.com/omar16100/atlassian-cli/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/omar16100/atlassian-cli/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/omar16100/atlassian-cli/compare/v0.9.3...v0.10.0
