@@ -3286,3 +3286,8 @@ preview defaults or confirmation gates. Prepare a minor pre-1.0 release because
 scripts must opt into bulk mutations. Update workspace/internal pins, lockfile,
 changelog and design-note status. Preserve contributor commit ancestry in the
 maintainer integration branch because the connected app cannot update the fork.
+
+Review follow-up (maintainer, PR #176): new e2e test
+`a_failed_delete_fails_the_command_and_the_others_still_run` (one DELETE answers 404, the other
+pages are deleted, exit code non-zero). The design note now states that `BulkExecutor::new` clamps
+`--concurrency 0` to 1. A real pseudo-terminal confirmation test remains a follow-up.

@@ -71,9 +71,9 @@ own search, so pages that change in between can change what is deleted.
   failed. It does not list which pages were already deleted; the successes are
   only logged at `info` level. The Bitbucket commands render that record, this
   command does not yet.
-- **Page IDs in paths.** The IDs returned by the search are encoded with the shared
-  `encode_path_segment` helper from PR #178 before the DELETE request.
-- **Concurrency of 0** is clamped to 1 by `BulkExecutor`, as before.
+- **Page IDs in paths.** The DELETE request uses `encode_path_segment` from PR #178 for each page ID.
+- **Concurrency of 0** is not rejected. `BulkExecutor::new` clamps it to 1.
+  `--concurrency 0` deletes one page at a time.
 
 ## Tests
 
@@ -102,6 +102,12 @@ explicit expected request count:
 - `dry_run_and_execute_are_rejected_together`
 - `execute_without_a_terminal_or_yes_refuses_and_deletes_nothing`
 - `execute_with_yes_deletes_every_match`
+- `a_failed_delete_fails_the_command_and_the_others_still_run`: one DELETE
+  answers 404, the other pages are still deleted and the exit code is non-zero.
 
-`docs_examples.rs` and `docs_examples_scripts.rs` check that the README and the
-example script still parse with the new flags.
+A confirmation answered on a real pseudo-terminal (accepted and declined) is not
+covered end to end. The prompt logic is covered through `confirm_destructive_on`
+and the injected confirmation above.
+
+`docs_examples.rs` and `docs_examples_scripts.rs` check the README and example
+script commands with the new flags.
