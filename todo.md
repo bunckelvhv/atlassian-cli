@@ -3291,3 +3291,16 @@ Review follow-up (maintainer, PR #176): new e2e test
 `a_failed_delete_fails_the_command_and_the_others_still_run` (one DELETE answers 404, the other
 pages are deleted, exit code non-zero). The design note now states that `BulkExecutor::new` clamps
 `--concurrency 0` to 1. A real pseudo-terminal confirmation test remains a follow-up.
+
+Review round 2 (maintainer, PR #177): a name that matches more than one transition on an issue
+(`Done` and `DONE`, or a Unicode lowercase collision) no longer takes the first one in Jira's list.
+`resolve_transition()` now returns `Result<ResolvedTransition, Unresolved>` and collects every
+match; more than one is `Unresolved::Ambiguous` with the sorted candidates, so the result does not
+depend on the response order. That issue gets no POST, shows `ambiguous` in the preview and is
+reported with its candidates, the other issues still run, and the command exits non-zero. An
+explicit ID still picks one of the duplicates. New tests: resolver tests for case variants,
+identical names, Unicode collisions (accents, Kelvin sign) in both orders and ID disambiguation;
+wiremock tests for a mixed batch in both orders, an ambiguous first issue, an ID over duplicates and
+the preview row; e2e tests for the mixed batch and the preview. The transition tests moved from
+`bulk.rs` into the child module `crates/cli/src/commands/jira/bulk/transition_tests.rs`, so
+`bulk.rs` stays under 2000 lines.

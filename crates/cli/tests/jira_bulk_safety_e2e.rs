@@ -855,6 +855,100 @@ async fn an_ambiguous_transition_value_sends_nothing() {
     assert!(writes(&server).await.is_empty(), "no POST at all");
 }
 
+/// A-1 and C-1 offer one "Finish", B-1 offers "Finish" and "FINISH". B-1 must
+/// receive no POST.
+async fn server_with_an_ambiguous_issue(reverse: bool, posts: Option<u64>) -> MockServer {
+    let server = MockServer::start().await;
+    mount_search(&server, &["A-1", "B-1", "C-1"]).await;
+    let mut duplicates = vec![
+        transition("11", "Finish", "Resolved"),
+        transition("21", "FINISH", "Cancelled"),
+    ];
+    if reverse {
+        duplicates.reverse();
+    }
+    mount_transitions_expecting(&server, "A-1", &[transition("31", "Finish", "Done")], posts).await;
+    mount_transitions_expecting(&server, "B-1", &duplicates, Some(0)).await;
+    mount_transitions_expecting(&server, "C-1", &[transition("41", "finish", "Done")], posts).await;
+    server
+}
+
+/// Two transitions on one issue match the name case-insensitively: that issue
+/// is skipped with an error naming both, the others are transitioned, and the
+/// command exits non-zero, in either response order.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_ambiguous_name_skips_that_issue_and_transitions_the_others() {
+    for reverse in [false, true] {
+        let server = server_with_an_ambiguous_issue(reverse, Some(1)).await;
+        let dir = TempDir::new().unwrap();
+        let config = write_config(dir.path(), &server.uri());
+
+        let out = run(
+            &config,
+            &[
+                "jira",
+                "bulk",
+                "transition",
+                "--jql",
+                "project = X",
+                "--transition",
+                "Finish",
+                "--execute",
+                "--yes",
+            ],
+        );
+
+        assert!(!out.status.success(), "the ambiguous issue is an error");
+        let err = stderr(&out);
+        assert!(err.contains("B-1"), "{err}");
+        assert!(err.contains("ambiguous"), "{err}");
+        assert!(err.contains(r#"11 "Finish", 21 "FINISH""#), "{err}");
+        let writes = writes(&server).await;
+        let sent: Vec<(&str, &str)> = writes
+            .iter()
+            .map(|(path, body)| (path.as_str(), transition_id_of(body)))
+            .collect();
+        assert_eq!(
+            sent,
+            vec![
+                ("/rest/api/3/issue/A-1/transitions", "31"),
+                ("/rest/api/3/issue/C-1/transitions", "41")
+            ],
+            "reverse = {reverse}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transition_preview_marks_an_ambiguous_issue() {
+    let server = server_with_an_ambiguous_issue(false, Some(0)).await;
+    let dir = TempDir::new().unwrap();
+    let config = write_config(dir.path(), &server.uri());
+
+    let out = run(
+        &config,
+        &[
+            "jira",
+            "bulk",
+            "transition",
+            "--jql",
+            "project = X",
+            "--transition",
+            "Finish",
+            "-f",
+            "json",
+        ],
+    );
+
+    assert!(out.status.success(), "{}{}", stdout(&out), stderr(&out));
+    let rows: Value = serde_json::from_str(&stdout(&out)).unwrap();
+    assert_eq!(rows[1]["key"], "B-1");
+    assert_eq!(rows[1]["action"], "ambiguous");
+    assert_eq!(rows[0]["action"], "would transition");
+    assert_eq!(rows[2]["action"], "would transition");
+    assert!(writes(&server).await.is_empty());
+}
+
 /// `--yes` only skips the prompt. It does not turn a listing into a change.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn yes_alone_does_not_execute() {
