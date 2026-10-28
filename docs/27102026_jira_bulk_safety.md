@@ -160,7 +160,8 @@ from the search response, not from the command line.
 
 ## Tests
 
-Resolution, in `jira/bulk.rs` (no HTTP):
+Resolution (no HTTP), in `jira/bulk/transition_tests.rs`; the label check is in
+`jira/bulk.rs`:
 
 - `a_name_is_matched_case_insensitively`
 - `a_name_match_is_unicode_aware`
@@ -182,7 +183,10 @@ Resolution, in `jira/bulk.rs` (no HTTP):
 - `normalize_labels_trims_and_drops_empty_values`
 - `the_preview_shows_transition_and_target_status_per_issue`
 
-The handlers over a `wiremock` server, in `jira/bulk.rs`. Two workflows, where ID
+The handlers over a `wiremock` server, in `jira/bulk/transition_tests.rs` for
+`transition` and in `jira/bulk.rs` for `assign`, `label` and the empty match. The
+transition tests live in their own child module so `bulk.rs` stays within the
+2000 line guideline. Two workflows, where ID
 `21` is "In Progress" once and "Done" once. The runs that must not write mount
 their mutation mocks with `expect(0)`, which wiremock verifies when the server is
 dropped:

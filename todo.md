@@ -3224,4 +3224,6 @@ reported with its candidates, the other issues still run, and the command exits 
 explicit ID still picks one of the duplicates. New tests: resolver tests for case variants,
 identical names, Unicode collisions (accents, Kelvin sign) in both orders and ID disambiguation;
 wiremock tests for a mixed batch in both orders, an ambiguous first issue, an ID over duplicates and
-the preview row; e2e tests for the mixed batch and the preview.
+the preview row; e2e tests for the mixed batch and the preview. The transition tests moved from
+`bulk.rs` into the child module `crates/cli/src/commands/jira/bulk/transition_tests.rs`, so
+`bulk.rs` stays under 2000 lines.
