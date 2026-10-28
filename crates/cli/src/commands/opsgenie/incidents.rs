@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::Serialize;
 use url::form_urlencoded;
 
@@ -167,7 +168,7 @@ pub async fn close_incident(
         note: Option<String>,
     }
 
-    let path = format!("incidents/{}/close", identifier);
+    let path = format!("incidents/{}/close", encode_path_segment(identifier)?);
     let body = CloseBody { note };
 
     tracing::debug!("Closing incident {}", identifier);
@@ -193,7 +194,7 @@ pub async fn resolve_incident(
         note: Option<String>,
     }
 
-    let path = format!("incidents/{}/resolve", identifier);
+    let path = format!("incidents/{}/resolve", encode_path_segment(identifier)?);
     let body = ResolveBody { note };
 
     tracing::debug!("Resolving incident {}", identifier);
@@ -219,7 +220,7 @@ pub async fn reopen_incident(
         note: Option<String>,
     }
 
-    let path = format!("incidents/{}/reopen", identifier);
+    let path = format!("incidents/{}/reopen", encode_path_segment(identifier)?);
     let body = ReopenBody { note };
 
     tracing::debug!("Reopening incident {}", identifier);
@@ -255,7 +256,7 @@ pub async fn add_responder(
         responder_type: String,
     }
 
-    let path = format!("incidents/{}/responders", identifier);
+    let path = format!("incidents/{}/responders", encode_path_segment(identifier)?);
     let body = AddResponderBody {
         responder: ResponderRef {
             id: responder_id.to_string(),
@@ -293,7 +294,7 @@ pub async fn add_note(ctx: &OpsgenieContext<'_>, identifier: &str, note: &str) -
         note: &'a str,
     }
 
-    let path = format!("incidents/{}/notes", identifier);
+    let path = format!("incidents/{}/notes", encode_path_segment(identifier)?);
     let body = NoteBody { note };
 
     tracing::debug!("Adding note to incident {}", identifier);
@@ -309,7 +310,7 @@ pub async fn add_note(ctx: &OpsgenieContext<'_>, identifier: &str, note: &str) -
 
 /// Delete an incident.
 pub async fn delete_incident(ctx: &OpsgenieContext<'_>, identifier: &str) -> Result<()> {
-    let path = format!("incidents/{}", identifier);
+    let path = format!("incidents/{}", encode_path_segment(identifier)?);
 
     tracing::debug!("Deleting incident {}", identifier);
     ctx.client

@@ -172,9 +172,11 @@ crates/
    atlassian-cli jira workflows list
    atlassian-cli jira workflows export "Software Simplified Workflow"
 
-   # Jira - Bulk Operations
-   atlassian-cli jira bulk transition --jql "project = DEV AND status = Open" --transition "In Progress" --dry-run
-   atlassian-cli jira bulk assign --jql "project = DEV AND assignee is EMPTY" --assignee admin@example.com
+   # Jira - Bulk Operations (list by default, --execute applies, --yes skips the prompt)
+   atlassian-cli jira bulk transition --jql "project = DEV AND status = Open" --transition "In Progress"
+   atlassian-cli jira bulk transition --jql "project = DEV AND status = Open" --transition "In Progress" --execute
+   atlassian-cli jira bulk assign --jql "project = DEV AND assignee is EMPTY" --assignee admin@example.com --execute --yes
+   atlassian-cli jira bulk label --jql "project = DEV AND labels is EMPTY" --action add --labels triage --execute --yes
    atlassian-cli jira bulk export --jql "project = DEV" --output issues.csv --export-format csv
 
    # Jira - Automation & Webhooks
@@ -228,7 +230,10 @@ crates/
    atlassian-cli confluence attachment delete 11111 --force
 
    # Confluence - Bulk Operations
-   atlassian-cli confluence bulk delete --cql "space = OLD AND type = page" --dry-run
+   # bulk delete only lists the matching pages; --execute moves them to the trash
+   # (after typing the match count back, or immediately with --yes).
+   atlassian-cli confluence bulk delete --cql "space = OLD AND type = page"
+   atlassian-cli confluence bulk delete --cql "space = OLD AND type = page" --execute
    atlassian-cli confluence bulk add-labels --cql "space = DEV" --labels docs,reviewed --dry-run
    atlassian-cli confluence bulk export --cql "space = DEV" --output backup.json --export-format json
 

@@ -15,6 +15,9 @@ mod servicedesk;
 mod sla;
 pub mod utils;
 
+#[cfg(test)]
+mod path_encoding_tests;
+
 pub use utils::JsmContext;
 
 #[derive(Args, Debug, Clone)]

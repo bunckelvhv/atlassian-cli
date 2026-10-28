@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::Serialize;
 
 use super::utils::{ApiResponse, OpsgenieContext, PagedResponse, Team, TeamMember};
@@ -115,7 +116,7 @@ pub async fn create_team(
 
 /// Delete a team.
 pub async fn delete_team(ctx: &OpsgenieContext<'_>, identifier: &str) -> Result<()> {
-    let path = format!("teams/{}", identifier);
+    let path = format!("teams/{}", encode_path_segment(identifier)?);
 
     tracing::debug!("Deleting team {}", identifier);
     ctx.client
@@ -189,7 +190,7 @@ pub async fn add_member(
         id: &'a str,
     }
 
-    let path = format!("teams/{}/members", identifier);
+    let path = format!("teams/{}/members", encode_path_segment(identifier)?);
     let body = AddMemberBody {
         user: UserRef { id: user_id },
         role,
@@ -212,7 +213,11 @@ pub async fn remove_member(
     identifier: &str,
     user_id: &str,
 ) -> Result<()> {
-    let path = format!("teams/{}/members/{}", identifier, user_id);
+    let path = format!(
+        "teams/{}/members/{}",
+        encode_path_segment(identifier)?,
+        encode_path_segment(user_id)?
+    );
 
     tracing::debug!("Removing user {} from team {}", user_id, identifier);
     ctx.client

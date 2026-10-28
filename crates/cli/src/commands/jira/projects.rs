@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use atlassian_cli_api::pagination::{fetch_paged, JiraOffsetPage, PageLimits};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -196,7 +197,10 @@ pub async fn update_project(
 
     let _: Value = ctx
         .client
-        .put(&format!("/rest/api/3/project/{key}"), &payload)
+        .put(
+            &format!("/rest/api/3/project/{}", encode_path_segment(key)?),
+            &payload,
+        )
         .await
         .with_context(|| format!("Failed to update project {key}"))?;
 
@@ -219,7 +223,10 @@ pub async fn delete_project(ctx: &JiraContext<'_>, key: &str, force: bool) -> Re
 
     let _: Value = ctx
         .client
-        .delete(&format!("/rest/api/3/project/{key}"))
+        .delete(&format!(
+            "/rest/api/3/project/{}",
+            encode_path_segment(key)?
+        ))
         .await
         .with_context(|| format!("Failed to delete project {key}"))?;
 
@@ -391,7 +398,10 @@ pub async fn update_component(
 
     let _: Value = ctx
         .client
-        .put(&format!("/rest/api/3/component/{id}"), &payload)
+        .put(
+            &format!("/rest/api/3/component/{}", encode_path_segment(id)?),
+            &payload,
+        )
         .await
         .with_context(|| format!("Failed to update component {id}"))?;
 
@@ -406,7 +416,10 @@ pub async fn update_component(
 pub async fn delete_component(ctx: &JiraContext<'_>, id: &str) -> Result<()> {
     let _: Value = ctx
         .client
-        .delete(&format!("/rest/api/3/component/{id}"))
+        .delete(&format!(
+            "/rest/api/3/component/{}",
+            encode_path_segment(id)?
+        ))
         .await
         .with_context(|| format!("Failed to delete component {id}"))?;
 
@@ -594,7 +607,10 @@ pub async fn update_version(
 
     let _: Value = ctx
         .client
-        .put(&format!("/rest/api/3/version/{id}"), &payload)
+        .put(
+            &format!("/rest/api/3/version/{}", encode_path_segment(id)?),
+            &payload,
+        )
         .await
         .with_context(|| format!("Failed to update version {id}"))?;
 
@@ -609,7 +625,7 @@ pub async fn update_version(
 pub async fn delete_version(ctx: &JiraContext<'_>, id: &str) -> Result<()> {
     let _: Value = ctx
         .client
-        .delete(&format!("/rest/api/3/version/{id}"))
+        .delete(&format!("/rest/api/3/version/{}", encode_path_segment(id)?))
         .await
         .with_context(|| format!("Failed to delete version {id}"))?;
 
@@ -627,7 +643,11 @@ pub async fn merge_versions(ctx: &JiraContext<'_>, from: &str, to: &str) -> Resu
     let _: Value = ctx
         .client
         .put(
-            &format!("/rest/api/3/version/{from}/mergeto/{to}"),
+            &format!(
+                "/rest/api/3/version/{}/mergeto/{}",
+                encode_path_segment(from)?,
+                encode_path_segment(to)?
+            ),
             &json!({}),
         )
         .await

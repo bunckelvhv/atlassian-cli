@@ -15,6 +15,9 @@ mod search;
 mod spaces;
 pub mod utils;
 
+#[cfg(test)]
+mod path_encoding_tests;
+
 use utils::ConfluenceContext;
 
 #[derive(Args, Debug, Clone)]
@@ -485,7 +488,7 @@ enum SearchCommands {
     Cql {
         /// CQL query
         query: String,
-        /// Maximum number of results
+        /// Maximum total results (0 for all; default: 25)
         #[arg(long)]
         limit: Option<usize>,
     },
@@ -496,7 +499,7 @@ enum SearchCommands {
     Text {
         /// Search query
         query: String,
-        /// Maximum number of results
+        /// Maximum total results (0 for all; default: 25)
         #[arg(long)]
         limit: Option<usize>,
     },
@@ -509,7 +512,7 @@ enum SearchCommands {
         space: String,
         /// Search query
         query: String,
-        /// Maximum number of results
+        /// Maximum total results (0 for all; default: 25)
         #[arg(long)]
         limit: Option<usize>,
     },
@@ -546,7 +549,7 @@ enum SearchCommands {
         #[arg(long)]
         show_query: bool,
 
-        /// Maximum number of results
+        /// Maximum total results (0 for all; default: 25)
         #[arg(long, default_value_t = 25)]
         limit: usize,
     },
@@ -554,13 +557,25 @@ enum SearchCommands {
 
 #[derive(Subcommand, Debug, Clone)]
 enum BulkCommands {
-    /// Bulk delete pages
+    /// Bulk delete pages. Lists the matches by default; pass --execute to delete.
+    ///
+    /// Without --execute the pages matching --cql are only listed and nothing is
+    /// deleted. With --execute the matching pages are moved to the trash after
+    /// you type the match count back, or immediately with --yes. Only the first
+    /// search page (up to 1000 pages) is covered per run.
     Delete {
         /// CQL query to select pages
         #[arg(long)]
         cql: String,
-        /// Dry run mode
+        /// Delete the matched pages. Without this, they are only listed.
         #[arg(long)]
+        execute: bool,
+        /// Skip the typed confirmation required by --execute.
+        #[arg(long)]
+        yes: bool,
+        /// Deprecated: listing is now the default. Cannot be combined with
+        /// --execute, which it would otherwise silently override.
+        #[arg(long, hide = true, conflicts_with = "execute")]
         dry_run: bool,
         /// Concurrency level
         #[arg(long, default_value_t = 4)]
@@ -860,9 +875,16 @@ pub async fn execute(
         ConfluenceCommands::Bulk(cmd) => match cmd {
             BulkCommands::Delete {
                 cql,
+                execute,
+                yes,
                 dry_run,
                 concurrency,
-            } => bulk::bulk_delete_pages(&ctx, &cql, dry_run, concurrency).await,
+            } => {
+                // clap already rejects --dry-run together with --execute; the `&&`
+                // keeps --dry-run a veto if that guard is ever removed.
+                let execute = execute && !dry_run;
+                bulk::bulk_delete_pages(&ctx, &cql, execute, yes, concurrency).await
+            }
             BulkCommands::AddLabels {
                 cql,
                 labels,

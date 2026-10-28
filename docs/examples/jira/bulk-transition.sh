@@ -122,12 +122,14 @@ execute_transition() {
 
     log "Executing bulk transition to: $TRANSITION"
 
+    # The typed YES in main() is the confirmation, so the CLI prompt is skipped.
     local args=(
         "--profile" "$PROFILE"
         "jira" "bulk" "transition"
         "--jql" "$JQL"
         "--transition" "$TRANSITION"
         "--concurrency" "$CONCURRENCY"
+        "--execute" "--yes"
     )
 
     atlassian-cli "${args[@]}"

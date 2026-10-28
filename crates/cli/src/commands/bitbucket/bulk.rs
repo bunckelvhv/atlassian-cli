@@ -132,7 +132,19 @@ pub async fn disable_features_on_stale_repos(
 
     for repo in targets {
         if execute {
-            let update_path = format!("/2.0/repositories/{workspace}/{}", repo.slug);
+            // Not `?`, for the same reason as in delete_branches: a slug from
+            // the listing that cannot be encoded must not discard the record
+            // of the repositories already changed.
+            let update_path = match (
+                encode_path_segment(workspace),
+                encode_path_segment(&repo.slug),
+            ) {
+                (Ok(ws), Ok(slug)) => format!("/2.0/repositories/{ws}/{slug}"),
+                (Err(err), _) | (_, Err(err)) => {
+                    failure = Some(err.into());
+                    break;
+                }
+            };
             let payload = serde_json::json!({
                 "has_issues": false,
                 "has_wiki": false,

@@ -33,6 +33,13 @@ Two mitigations are in place:
   themselves. **No raw `{workspace}/{repo_slug}` prefix remains at any DELETE
   site there.**
 
+Update: [27102026_path_identifier_encoding.md](27102026_path_identifier_encoding.md)
+adds a shared helper, `atlassian_cli_api::path::encode_path_segment`, and uses
+it at every POST, PUT, PATCH and DELETE site in all products. The table below
+counts the shape (`format!` building a path), so it still includes the read-only
+requests, which that change leaves alone, and the integer-typed identifiers,
+which need no encoding.
+
 What remains:
 
 | Product | Path-building `format!` calls |
@@ -58,14 +65,18 @@ tried seven times and produced a new defect on six of them.
 
 `bb bulk`, `bb branch delete` and `bb repo delete` were brought onto a common
 footing: listing is the default where it makes sense, `--execute` performs the
-change, and a typed resource name is required unless `--yes` is passed. Nothing
-else in the CLI follows it.
+change, and a typed resource name is required unless `--yes` is passed.
+`jira bulk transition`, `assign` and `label` followed, see
+[27102026_jira_bulk_safety.md](27102026_jira_bulk_safety.md). Nothing else in
+the CLI follows it.
 
-Ten delete operations take no confirmation and no `--force` flag at all:
+Nine delete operations take no confirmation and no `--force` flag at all. A tenth,
+`confluence bulk delete`, was the least guarded and now lists by default and needs
+`--execute` plus a typed match count or `--yes`; see
+[27102026_confluence_bulk_delete_safety.md](27102026_confluence_bulk_delete_safety.md).
 
 | Command | Reversible? |
 | --- | --- |
-| `confluence bulk delete-pages` | **No** — bulk, and the least guarded thing in the CLI |
 | `jira field delete` | **No** |
 | `jira project component delete` | **No** |
 | `jira project version delete` | **No** |
@@ -79,7 +90,7 @@ Ten delete operations take no confirmation and no `--force` flag at all:
 The rest use a `--force` flag, which is the fail-closed pattern and acceptable;
 only the typed-name commands go further.
 
-**This needs a product decision before a sweep.** Adding prompts to ten commands
+**This needs a product decision before a sweep.** Adding prompts to nine commands
 across three products changes behaviour for anyone scripting them, and the
 codebase already contains two defensible patterns (`--force`, and typed-name
 confirmation). Picking one per command is a judgement about blast radius, not a

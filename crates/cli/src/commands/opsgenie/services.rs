@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::Serialize;
 
 use super::utils::{ApiResponse, OpsgenieContext, PagedResponse, Service};
@@ -124,7 +125,7 @@ pub async fn create_service(
 
 /// Delete a service.
 pub async fn delete_service(ctx: &OpsgenieContext<'_>, identifier: &str) -> Result<()> {
-    let path = format!("services/{}", identifier);
+    let path = format!("services/{}", encode_path_segment(identifier)?);
 
     tracing::debug!("Deleting service {}", identifier);
     ctx.client

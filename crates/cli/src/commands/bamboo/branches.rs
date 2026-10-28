@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::Serialize;
 
 use super::utils::{BambooContext, Branch, BranchesWrapper, ListResponse};
@@ -99,7 +100,10 @@ pub async fn create_branch(
         vcs_branch: Option<&'a str>,
     }
 
-    let path = format!("/rest/api/latest/plan/{}/branch", plan_key);
+    let path = format!(
+        "/rest/api/latest/plan/{}/branch",
+        encode_path_segment(plan_key)?
+    );
     let body = CreateBranchBody {
         branch_name,
         vcs_branch,
@@ -126,7 +130,7 @@ pub async fn create_branch(
 
 /// Delete a branch plan.
 pub async fn delete_branch(ctx: &BambooContext<'_>, branch_key: &str) -> Result<()> {
-    let path = format!("/rest/api/latest/plan/{}", branch_key);
+    let path = format!("/rest/api/latest/plan/{}", encode_path_segment(branch_key)?);
 
     tracing::debug!("Deleting branch {}", branch_key);
     ctx.client
@@ -141,7 +145,10 @@ pub async fn delete_branch(ctx: &BambooContext<'_>, branch_key: &str) -> Result<
 
 /// Enable a branch plan.
 pub async fn enable_branch(ctx: &BambooContext<'_>, branch_key: &str) -> Result<()> {
-    let path = format!("/rest/api/latest/plan/{}/enable", branch_key);
+    let path = format!(
+        "/rest/api/latest/plan/{}/enable",
+        encode_path_segment(branch_key)?
+    );
 
     tracing::debug!("Enabling branch {}", branch_key);
     ctx.client
@@ -156,7 +163,10 @@ pub async fn enable_branch(ctx: &BambooContext<'_>, branch_key: &str) -> Result<
 
 /// Disable a branch plan.
 pub async fn disable_branch(ctx: &BambooContext<'_>, branch_key: &str) -> Result<()> {
-    let path = format!("/rest/api/latest/plan/{}/disable", branch_key);
+    let path = format!(
+        "/rest/api/latest/plan/{}/disable",
+        encode_path_segment(branch_key)?
+    );
 
     tracing::debug!("Disabling branch {}", branch_key);
     ctx.client

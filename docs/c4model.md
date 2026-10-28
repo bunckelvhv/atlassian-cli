@@ -268,7 +268,14 @@ flows up to the global (`auth logout --profile`, positional `repo` under `bb`).
 - `automation.rs` - Automation rules management
 - `webhooks.rs` - Webhook CRUD
 - `audit.rs` - Audit log retrieval
-- `bulk.rs` - Bulk issue operations
+- `bulk.rs` - Bulk issue operations. `transition`, `assign` and `label` list by
+  default and need `--execute` plus the typed confirmation or `--yes`; a
+  transition is resolved against each issue's own transitions
+
+`bulk.rs` rejects multiple transition-name matches with `Unresolved::Ambiguous`.
+The error contains candidates in ID order. Explicit IDs select a transition with
+the name from the first issue. Transition GET and POST requests encode the issue
+key. The separate `bulk/transition_tests.rs` module tests these rules.
 
 **Confluence (`commands/confluence/`):**
 - `pages.rs` - Page CRUD, publishing drafts
@@ -399,6 +406,22 @@ Debug data flow: **`--debug` (global) → `main::tracing_directives` →
 → `ApiClient` request/response events → stderr.** `RUST_LOG` directives are
 appended as refinements; stdout carries only command output.
 
+**Path segments** (`crates/api/src/path.rs`). Commands build request paths with
+`format!`, so a caller-provided identifier has to be made safe before it is
+interpolated. `encode_path_segment` percent-encodes everything outside the
+RFC 3986 unreserved set and rejects an empty value, a value containing `/`, and
+the dot segments `.` and `..` with `ApiError::InvalidIdentifier`. Every command
+that writes or deletes (POST, PUT, PATCH, DELETE, including the multipart
+uploads, which bypass `safe_join`) passes its identifiers through it; the
+Bitbucket command modules re-export it from `bitbucket/utils.rs`. Query values
+use `query::encode_query_component`. See
+[27102026_path_identifier_encoding.md](27102026_path_identifier_encoding.md).
+
+Jira comment add, update and delete encode the issue key and comment ID before
+any request. An invalid identifier causes `ApiError::InvalidIdentifier` and zero
+requests. Update reads the encoded comment path and preserves its visibility
+unless the user supplies a visibility change.
+
 **Pagination** (`crates/api/src/pagination.rs`).
 
 Until v0.9.0 this module exposed a `Paginator` trait and `PagedResponse` that
@@ -423,14 +446,17 @@ pub async fn fetch_paged<P: Page>(
 ```
 
 The *wrapper* is generic, not the item: `BitbucketPage<T>` keys on `values`,
-`JiraPage<T>` on `issues`. A single `fetch_paged<T>` cannot work, because
+`JiraPage<T>` on `issues`, and `ConfluencePage<T>` on `results`. A single
+`fetch_paged<T>` cannot work, because
 `ApiClient::get::<T>` deserializes the whole body and nothing tells it which key
 holds the items; passing the key as a string would mean a `serde_json::Value`
 round-trip that costs a second parse and discards type errors.
 
 `Continuation` is an enum because the products differ substantively: Bitbucket
 returns an absolute URL (resolved through `safe_join`, so a cursor pointing at
-another origin is refused), Jira an opaque token that the driver places back on
+another origin is refused), Confluence CQL search returns a `_links.next` URL
+(its `/rest/api/...` path is normalized to the site's `/wiki/rest/api/...`
+route), and Jira an opaque token that the driver places back on
 the *original* path, replacing any previous one; appending would put two
 `nextPageToken` values on the third page.
 
@@ -441,6 +467,12 @@ established.
 
 Data flow: **command → fetch_paged → ApiClient::get (per page) → PageInfo →
 ListMeta → OutputRenderer envelope.**
+
+Confluence search retains its existing array output and reports a truncated
+result on stderr when the requested total or the pagination request budget is
+reached. The default total limit is 25. The request budget is 50, including
+with `--limit 0`. `ConfluenceLinks` exposes the next URL. The driver rejects a
+foreign origin and treats a blank next URL as the end of the result set.
 
 ---
 
@@ -872,7 +904,7 @@ Error Handling:
 | Layer | Technology | Purpose |
 |-------|------------|---------|
 | CLI Framework | Clap 4.6 | Argument parsing with derive macros |
-| Async Runtime | Tokio 1.51 (`rt-multi-thread`, `macros`, `time`, `sync`, `fs`, `io-util`) | Non-blocking I/O; `net` arrives through reqwest and hyper-util |
+| Async Runtime | Tokio 1.54.1 (`rt-multi-thread`, `macros`, `time`, `sync`, `fs`, `io-util`) | Non-blocking I/O; `net` arrives through reqwest and hyper-util |
 | Streams | futures-util 0.3 (`std` only) | Bounded concurrency in the bulk executor |
 | Retry delays | `RetryDelays` in `crates/api/src/retry.rs`, jitter from fastrand 2 | Exponential delays between attempts; `backoff` stays a dependency only for the deprecated `RetryConfig::backoff()` until the next breaking release |
 | HTTP Client | Reqwest 0.13, native-tls only (`default-features = false`; vendored OpenSSL on Linux GNU and musl, Security.framework on macOS) | REST API communication |

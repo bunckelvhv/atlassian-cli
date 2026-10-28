@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::Serialize;
 
 use super::utils::{ApiResponse, OnCallParticipant, OpsgenieContext, PagedResponse, Schedule};
@@ -151,7 +152,7 @@ pub async fn create_schedule(
 
 /// Delete a schedule.
 pub async fn delete_schedule(ctx: &OpsgenieContext<'_>, identifier: &str) -> Result<()> {
-    let path = format!("schedules/{}", identifier);
+    let path = format!("schedules/{}", encode_path_segment(identifier)?);
 
     tracing::debug!("Deleting schedule {}", identifier);
     ctx.client
@@ -166,7 +167,7 @@ pub async fn delete_schedule(ctx: &OpsgenieContext<'_>, identifier: &str) -> Res
 
 /// Enable a schedule.
 pub async fn enable_schedule(ctx: &OpsgenieContext<'_>, identifier: &str) -> Result<()> {
-    let path = format!("schedules/{}/enable", identifier);
+    let path = format!("schedules/{}/enable", encode_path_segment(identifier)?);
 
     tracing::debug!("Enabling schedule {}", identifier);
     ctx.client
@@ -181,7 +182,7 @@ pub async fn enable_schedule(ctx: &OpsgenieContext<'_>, identifier: &str) -> Res
 
 /// Disable a schedule.
 pub async fn disable_schedule(ctx: &OpsgenieContext<'_>, identifier: &str) -> Result<()> {
-    let path = format!("schedules/{}/disable", identifier);
+    let path = format!("schedules/{}/disable", encode_path_segment(identifier)?);
 
     tracing::debug!("Disabling schedule {}", identifier);
     ctx.client

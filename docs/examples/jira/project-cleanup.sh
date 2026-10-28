@@ -157,10 +157,13 @@ add_label() {
 
     log "Adding label '$label' to issues..."
 
+    # The CLI lists by default. --execute applies the change and asks for
+    # confirmation on a terminal; add --yes to run it unattended.
     atlassian-cli --profile "$PROFILE" jira bulk label \
         --jql "$jql" \
         --action add \
         --labels "$label" \
+        --execute \
         --concurrency "$CONCURRENCY"
 
     log "Labels added successfully"
