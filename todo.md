@@ -3208,3 +3208,8 @@ confirmation and `--yes` delete every match, no matches asks nothing. End-to-end
 `--yes` without `--execute`, deprecated `--dry-run`, `--dry-run --execute` rejected by clap,
 `--execute` refused without `--yes`, `--execute --yes` deletes. Breaking change for scripts: they
 must pass `--execute --yes`.
+
+Review follow-up (maintainer, PR #176): new e2e test
+`a_failed_delete_fails_the_command_and_the_others_still_run` (one DELETE answers 404, the other
+pages are deleted, exit code non-zero). The design note now states that `BulkExecutor::new` clamps
+`--concurrency 0` to 1. A real pseudo-terminal confirmation test remains a follow-up.

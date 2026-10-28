@@ -75,7 +75,8 @@ own search, so pages that change in between can change what is deleted.
   the delete path without encoding. This is the general path-building topic in
   [08092026_remaining_hardening.md](08092026_remaining_hardening.md) and is not
   changed here.
-- **Concurrency of 0** is not validated, as before.
+- **Concurrency of 0** is not rejected. `BulkExecutor::new` clamps it to 1, so
+  `--concurrency 0` deletes one page at a time, as before.
 
 ## Tests
 
@@ -104,6 +105,10 @@ explicit expected request count:
 - `dry_run_and_execute_are_rejected_together`
 - `execute_without_a_terminal_or_yes_refuses_and_deletes_nothing`
 - `execute_with_yes_deletes_every_match`
+- `a_failed_delete_fails_the_command_and_the_others_still_run`: one DELETE
+  answers 404, the other pages are still deleted and the exit code is non-zero.
 
-`docs_examples.rs` and `docs_examples_scripts.rs` check that the README and the
+A confirmation answered on a real pseudo-terminal (accepted and declined) is not
+covered end to end. The prompt logic is covered through `confirm_destructive_on`
+and the injected confirmation above. and `docs_examples_scripts.rs` check that the README and the
 example script still parse with the new flags.

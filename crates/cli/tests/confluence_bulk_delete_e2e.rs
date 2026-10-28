@@ -314,3 +314,57 @@ async fn execute_with_yes_deletes_every_match() {
         vec!["/wiki/api/v2/pages/101", "/wiki/api/v2/pages/102"]
     );
 }
+
+/// One DELETE fails. The other pages are still deleted, and the command exits
+/// non-zero instead of reporting success.
+#[tokio::test]
+async fn a_failed_delete_fails_the_command_and_the_others_still_run() {
+    let server = MockServer::start().await;
+    mock_search(
+        &server,
+        &[
+            ("101", "Old roadmap"),
+            ("102", "Locked"),
+            ("103", "Old notes"),
+        ],
+    )
+    .await;
+    Mock::given(method("DELETE"))
+        .and(path_matcher("/wiki/api/v2/pages/102"))
+        .respond_with(ResponseTemplate::new(404))
+        .with_priority(1)
+        .expect(1)
+        .mount(&server)
+        .await;
+    mock_delete(&server, 2).await;
+
+    let dir = TempDir::new().unwrap();
+    let config = write_config(dir.path(), &server.uri());
+
+    let out = run(
+        &config,
+        &[
+            "confluence",
+            "bulk",
+            "delete",
+            "--cql",
+            CQL,
+            "--execute",
+            "--yes",
+        ],
+    );
+
+    assert!(
+        !out.status.success(),
+        "a failed delete must fail the command: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert_eq!(
+        delete_paths(&server).await,
+        vec![
+            "/wiki/api/v2/pages/101",
+            "/wiki/api/v2/pages/102",
+            "/wiki/api/v2/pages/103"
+        ]
+    );
+}
