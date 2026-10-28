@@ -3304,3 +3304,32 @@ wiremock tests for a mixed batch in both orders, an ambiguous first issue, an ID
 the preview row; e2e tests for the mixed batch and the preview. The transition tests moved from
 `bulk.rs` into the child module `crates/cli/src/commands/jira/bulk/transition_tests.rs`, so
 `bulk.rs` stays under 2000 lines.
+
+## 2026-10-16: Confluence CQL search pagination (draft PR #173)
+
+`confluence search cql` made one `/wiki/rest/api/content/search` request, so a
+server page cap could silently hide later matches even when `--limit` was
+higher. All four Confluence search variants now follow `_links.next` through
+the shared pagination driver. `--limit` applies to the combined results, with
+`--limit 0` requesting all pages within the request safety budget. Truncated
+results warn on stderr. An end-to-end mock covers the 250-to-251 boundary and
+the total limit. The Confluence page wrapper also normalizes Atlassian's
+`/rest/api/...` next link to `/wiki/rest/api/...`.
+
+## 2026-10-28: complete PR #179 integration
+
+PR #179 combines #173, #175, current #176, current #177 and #178 with their
+contributor commits. Conflict corrections preserve unique tests and document
+entries. The transition resolver keeps typed ambiguity errors and sorted
+candidates. Transition GET and POST paths retain identifier guards.
+
+Comment-path tests cover add, update and delete for issue #159. They check query
+markers, literal percent escapes, rejected segments, zero requests for invalid
+identifiers and preserved comment visibility. Pagination tests cover continuation
+URLs, blank cursors, the default limit, `/wiki`, foreign origins and the
+50-request budget.
+
+The lockfile keeps Tokio 1.54.1 and updates `ctutils` to 0.4.4 and
+`rustls-webpki` to 0.103.16. The security workflow requires `cargo audit` success.
+No advisory exception was added. Version 0.13.0 remains prepared, with all new
+change notes under `[Unreleased]`. Release tags and publication remain pending.

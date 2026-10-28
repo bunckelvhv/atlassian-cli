@@ -221,3 +221,155 @@ async fn compatibility_values_are_encoded_as_documented() {
         );
     }
 }
+
+const COMMENT_IDENTIFIERS: &[(&str, &str)] = &[
+    ("1?x=1", "1%3Fx%3D1"),
+    ("DEV-1#note", "DEV-1%23note"),
+    ("%2F", "%252F"),
+    ("%2e%2e", "%252e%252e"),
+];
+
+#[tokio::test]
+async fn comment_add_encodes_the_issue_key() {
+    for (key, encoded) in COMMENT_IDENTIFIERS {
+        let server = MockServer::start().await;
+        mock_all_methods(&server).await;
+        let renderer = OutputRenderer::new(OutputFormat::Json);
+        let ctx = JiraContext {
+            client: ApiClient::new(server.uri()).unwrap(),
+            renderer: &renderer,
+        };
+
+        super::issues::add_comment(&ctx, key, "note", None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            received(&server).await,
+            vec![(
+                "POST".into(),
+                format!("/rest/api/3/issue/{encoded}/comment"),
+                None,
+            )],
+        );
+    }
+}
+
+#[tokio::test]
+async fn comment_update_encodes_both_identifiers_and_keeps_visibility() {
+    use super::issues::VisibilityChange;
+    use serde_json::json;
+    use wiremock::matchers::{body_partial_json, path};
+
+    for (value, encoded) in COMMENT_IDENTIFIERS {
+        for kind in ["role", "group"] {
+            let server = MockServer::start().await;
+            let comment_path = format!("/rest/api/3/issue/{encoded}/comment/{encoded}");
+            let visibility = json!({
+                "type": kind, "value": "Developers", "identifier": "restricted-1"
+            });
+            Mock::given(method("GET"))
+                .and(path(&comment_path))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "visibility": visibility
+                })))
+                .expect(1)
+                .mount(&server)
+                .await;
+            Mock::given(method("PUT"))
+                .and(path(&comment_path))
+                .and(body_partial_json(json!({ "visibility": visibility })))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+                .expect(1)
+                .mount(&server)
+                .await;
+            let renderer = OutputRenderer::new(OutputFormat::Json);
+            let ctx = JiraContext {
+                client: ApiClient::new(server.uri()).unwrap(),
+                renderer: &renderer,
+            };
+
+            super::issues::update_comment(&ctx, value, value, "note", &VisibilityChange::Keep)
+                .await
+                .unwrap();
+
+            assert_eq!(
+                received(&server).await,
+                vec![
+                    ("GET".into(), comment_path.clone(), None),
+                    ("PUT".into(), comment_path, None),
+                ],
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn comment_delete_encodes_both_identifiers() {
+    for (value, encoded) in COMMENT_IDENTIFIERS {
+        let server = MockServer::start().await;
+        mock_all_methods(&server).await;
+        let renderer = OutputRenderer::new(OutputFormat::Json);
+        let ctx = JiraContext {
+            client: ApiClient::new(server.uri()).unwrap(),
+            renderer: &renderer,
+        };
+
+        super::issues::delete_comment(&ctx, value, value)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            received(&server).await,
+            vec![(
+                "DELETE".into(),
+                format!("/rest/api/3/issue/{encoded}/comment/{encoded}"),
+                None,
+            )],
+        );
+    }
+}
+
+#[tokio::test]
+async fn invalid_comment_identifiers_send_no_requests() {
+    use super::issues::{
+        add_comment, delete_comment, update_comment, CommentVisibility, VisibilityChange,
+    };
+    use atlassian_cli_api::error::ApiError;
+
+    let server = MockServer::start().await;
+    let renderer = OutputRenderer::new(OutputFormat::Json);
+    let ctx = JiraContext {
+        client: ApiClient::new(server.uri()).unwrap(),
+        renderer: &renderer,
+    };
+
+    for invalid in ["", ".", "..", "DEV-1/..", "1/comment"] {
+        let err = add_comment(&ctx, invalid, "note", None).await.unwrap_err();
+        assert!(matches!(
+            err.downcast_ref::<ApiError>(),
+            Some(ApiError::InvalidIdentifier { .. })
+        ));
+        for (key, comment_id) in [(invalid, "10500"), ("DEV-1", invalid)] {
+            let err = delete_comment(&ctx, key, comment_id).await.unwrap_err();
+            assert!(matches!(
+                err.downcast_ref::<ApiError>(),
+                Some(ApiError::InvalidIdentifier { .. })
+            ));
+            for change in [
+                VisibilityChange::Keep,
+                VisibilityChange::Public,
+                VisibilityChange::Set(CommentVisibility::Role("Developers".into())),
+            ] {
+                let err = update_comment(&ctx, key, comment_id, "note", &change)
+                    .await
+                    .unwrap_err();
+                assert!(matches!(
+                    err.downcast_ref::<ApiError>(),
+                    Some(ApiError::InvalidIdentifier { .. })
+                ));
+            }
+        }
+    }
+    assert!(received(&server).await.is_empty());
+}

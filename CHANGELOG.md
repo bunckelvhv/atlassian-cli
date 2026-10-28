@@ -11,6 +11,13 @@ resolve. `git log` remains the complete record.
 
 ## [Unreleased]
 
+### Added
+
+- The API crate exposes `ConfluencePage<T>` and `ConfluenceLinks` for Confluence
+  pagination. (#173)
+- The API crate exposes `encode_path_segment` and `ApiError::InvalidIdentifier`
+  for request path identifiers. (#178)
+
 ### Security
 
 - Update `ctutils` to 0.4.4 to correct RUSTSEC-2026-0385. Update
@@ -63,6 +70,10 @@ resolve. `git log` remains the complete record.
   left unchanged, the other issues are still processed, and the command exits with
   an error. Pass the transition ID to choose between transitions with the same
   name. (#177)
+
+- Confluence `search cql`, `text`, `in-space`, and `params` follow additional
+  result pages. `--limit` now applies to the full result set, and incomplete
+  results produce a warning instead of silently stopping at one page. (#173)
 
 ## [0.12.0] - 2026-10-16
 

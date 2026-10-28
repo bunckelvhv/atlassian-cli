@@ -488,7 +488,7 @@ enum SearchCommands {
     Cql {
         /// CQL query
         query: String,
-        /// Maximum number of results
+        /// Maximum total results (0 for all; default: 25)
         #[arg(long)]
         limit: Option<usize>,
     },
@@ -499,7 +499,7 @@ enum SearchCommands {
     Text {
         /// Search query
         query: String,
-        /// Maximum number of results
+        /// Maximum total results (0 for all; default: 25)
         #[arg(long)]
         limit: Option<usize>,
     },
@@ -512,7 +512,7 @@ enum SearchCommands {
         space: String,
         /// Search query
         query: String,
-        /// Maximum number of results
+        /// Maximum total results (0 for all; default: 25)
         #[arg(long)]
         limit: Option<usize>,
     },
@@ -549,7 +549,7 @@ enum SearchCommands {
         #[arg(long)]
         show_query: bool,
 
-        /// Maximum number of results
+        /// Maximum total results (0 for all; default: 25)
         #[arg(long, default_value_t = 25)]
         limit: usize,
     },
