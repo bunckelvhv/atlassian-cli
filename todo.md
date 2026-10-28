@@ -3214,3 +3214,14 @@ is applied to no issue, name matching is Unicode aware, an unreadable first issu
 a transition given by name (an ID stays closed), zero matches render an empty list through
 `render_list_or_empty` (`[]` under `-f json`), and the preview and refusal tests mount their
 mutation mocks with `expect(0)`.
+
+Review round 2 (maintainer, PR #177): a name that matches more than one transition on an issue
+(`Done` and `DONE`, or a Unicode lowercase collision) no longer takes the first one in Jira's list.
+`resolve_transition()` now returns `Result<ResolvedTransition, Unresolved>` and collects every
+match; more than one is `Unresolved::Ambiguous` with the sorted candidates, so the result does not
+depend on the response order. That issue gets no POST, shows `ambiguous` in the preview and is
+reported with its candidates, the other issues still run, and the command exits non-zero. An
+explicit ID still picks one of the duplicates. New tests: resolver tests for case variants,
+identical names, Unicode collisions (accents, Kelvin sign) in both orders and ID disambiguation;
+wiremock tests for a mixed batch in both orders, an ambiguous first issue, an ID over duplicates and
+the preview row; e2e tests for the mixed batch and the preview.

@@ -31,9 +31,11 @@ resolve. `git log` remains the complete record.
   ID found on the first matching issue was sent to every issue, so issues from other
   workflows could be moved with a different transition or fail. A name is matched on
   each issue. An ID is applied only where it has the same name as on the first
-  issue. An issue that does not offer the transition is reported with its key and
+  issue. An issue that does not offer the transition, or where the name matches more
+  than one transition (for example `Done` and `DONE`), is reported with its key and
   left unchanged, the other issues are still processed, and the command exits with
-  an error. (#177)
+  an error. Pass the transition ID to choose between transitions with the same
+  name. (#177)
 
 ## [0.12.0] - 2026-10-16
 

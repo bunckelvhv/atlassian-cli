@@ -29,7 +29,8 @@ ID does not exist.
 
 - `transition`, `assign` and `label` list the matching issues by default and
   change nothing. `transition` shows, per issue, the transition that would run and
-  the status it leads to, or `not available`.
+  the status it leads to, or `not available`, or `ambiguous` when the name matches
+  more than one transition on that issue.
 - `--execute` applies the change. It asks for the number of matching issues to be
   typed back, or takes `--yes` to skip the prompt. Without a terminal and without
   `--yes` it refuses.
@@ -85,7 +86,8 @@ prints "No issues found matching query", and `-f json` prints `[]`.
 `plan_transitions` reads the transitions of every matching issue and resolves
 the request on each one. The decision is a pure function,
 `resolve_transition(available, request)`, which returns the transition ID, its
-name and the target status (`to.name`), or `None`.
+name and the target status (`to.name`), or why there is none
+(`Unresolved::NotAvailable` or `Unresolved::Ambiguous`).
 
 - **A name** is compared by Unicode lowercase forms (`to_lowercase()` on both
   sides), so `CAFÉ` matches `café`. This is not full Unicode case folding:
@@ -106,6 +108,14 @@ name and the target status (`to.name`), or `None`.
   run by accident. Any other value is kept as a name and resolves only on issues
   that have a transition of exactly that name.
 - **No fallback.** An issue that does not offer the transition gets no request.
+- **No guess between duplicates.** Every transition that matches is collected.
+  When a name matches more than one transition on an issue (`Done` and `DONE`,
+  two transitions with the same name, or names that only collide after Unicode
+  lowercasing), that issue is ambiguous: it gets no request, the preview shows
+  `ambiguous`, and the error lists the candidates as `ID "name"`, sorted by ID.
+  The outcome therefore does not depend on the order in which Jira lists the
+  transitions. The other issues are not affected. An explicit ID still selects
+  one of the duplicates, because it is matched on ID and pinned name together.
 
 The first issue is read first because it fixes what an ID means. The others are
 read concurrently with the `--concurrency` setting. A failed read never aborts
@@ -137,8 +147,10 @@ from the search response, not from the command line.
   nowhere when the first issue cannot be read, or when it matches neither an ID
   nor a name on the first issue. Use the transition name for queries that span
   workflows, or order the query so a suitable issue comes first.
-- **Two transitions with the same name on one issue.** The first one in Jira's
-  list is used, as before. Jira does not promise an order.
+- **Two transitions with the same name on one issue.** That issue is skipped as
+  ambiguous rather than given the first one in Jira's list. Pass the transition
+  ID to choose one; the ID is pinned to the first issue, so for a query spanning
+  workflows narrow it to the issues where that ID is the intended transition.
 - **Search is capped at 1000 issues, as before.** The count in the prompt is the
   count of issues returned, not necessarily everything the JQL matches.
 - **The typed value is the match count,** not an identifying name. It protects
@@ -161,6 +173,12 @@ Resolution, in `jira/bulk.rs` (no HTTP):
 - `an_id_that_is_also_another_transitions_name_is_ambiguous`
 - `an_id_that_is_also_its_own_name_is_not_ambiguous`
 - `an_unreadable_first_issue_keeps_ids_closed_and_names_open`
+- `case_variants_of_a_name_are_ambiguous_in_either_order`
+- `identical_names_are_ambiguous`
+- `a_unicode_lowercase_collision_is_ambiguous_in_either_order`: accents and the
+  Kelvin sign (U+212A), which lowercases to `k`
+- `an_explicit_id_disambiguates_duplicate_names`
+- `an_ambiguous_issue_lists_the_candidates_independent_of_order`
 - `normalize_labels_trims_and_drops_empty_values`
 - `the_preview_shows_transition_and_target_status_per_issue`
 
@@ -177,6 +195,11 @@ dropped:
 - `an_unreadable_first_issue_is_one_row_of_the_preview`
 - `an_unreadable_first_issue_closes_an_id_for_every_issue`
 - `an_ambiguous_value_is_applied_to_no_issue`
+- `an_ambiguous_name_skips_that_issue_and_runs_the_others`: in both response
+  orders, the ambiguous issue's POST mock is mounted with `expect(0)`
+- `an_ambiguous_first_issue_does_not_stop_a_name_on_the_others`
+- `an_explicit_id_runs_where_the_name_is_ambiguous`
+- `the_preview_marks_an_ambiguous_issue`
 - `plans_keep_the_order_of_the_search_result`: three issues, the second answers
   late, so the order only holds because of the explicit sort.
 - `the_target_status_is_resolved_per_issue`
@@ -200,6 +223,9 @@ The binary has no terminal on stdin there, which is what a script looks like:
 - `an_unreadable_first_issue_does_not_stop_a_transition_name`
 - `an_unreadable_first_issue_sends_no_transition_for_an_id`
 - `an_ambiguous_transition_value_sends_nothing`
+- `an_ambiguous_name_skips_that_issue_and_transitions_the_others`: both response
+  orders, no POST to the ambiguous issue, non-zero exit, candidates in the error
+- `transition_preview_marks_an_ambiguous_issue`
 - `assign_lists_by_default`, `assign_execute_without_yes_and_without_a_terminal_is_refused`,
   `assign_execute_with_yes_assigns_every_issue`
 - `label_lists_by_default`, `label_execute_without_yes_and_without_a_terminal_is_refused`,

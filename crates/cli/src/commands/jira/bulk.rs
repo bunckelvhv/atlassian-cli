@@ -88,14 +88,14 @@ pub async fn bulk_transition(
     // Transition IDs are only unique within one workflow, so the transition is
     // resolved against each issue's own list, never taken from the first issue.
     let plans = plan_transitions(ctx, &issue_keys, transition, concurrency).await?;
-    let unavailable = plans.iter().filter(|plan| plan.outcome.is_err()).count();
+    let skipped = plans.iter().filter(|plan| plan.outcome.is_err()).count();
 
     if !execute {
         ctx.renderer.render_list(&transition_rows(&plans))?;
         // stderr, so a piped `-f json` listing stays machine-readable.
         eprintln!(
-            "Listing only. {} issue(s) match, the transition is not available on {unavailable}. \
-             Pass --execute to apply it.",
+            "Listing only. {} issue(s) match, the transition cannot run on {skipped} \
+             (not available or ambiguous). Pass --execute to apply it.",
             plans.len()
         );
         return Ok(());
@@ -103,15 +103,15 @@ pub async fn bulk_transition(
 
     // Confirm before the first request, not after some of them have happened.
     // With nothing to run there is nothing to confirm: the errors are reported.
-    if !assume_yes && unavailable < plans.len() {
+    if !assume_yes && skipped < plans.len() {
         confirm_destructive(
             &plans.len().to_string(),
             &format!(
                 "About to transition {} of {} issue(s) with {transition:?}.\n\
-                 The transition is not available on {unavailable} issue(s), which are skipped \
-                 and reported as errors.\n\
+                 The transition cannot run on {skipped} issue(s) (not available or ambiguous), \
+                 which are skipped and reported as errors.\n\
                  Re-run without --execute to list them first.",
-                plans.len() - unavailable,
+                plans.len() - skipped,
                 plans.len()
             ),
         )?;
@@ -625,27 +625,55 @@ pub(crate) struct ResolvedTransition {
     pub to_status: Option<String>,
 }
 
-/// Find the transition for one issue, or `None` when it is not available there.
+/// Why the requested transition does not run on one issue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Unresolved {
+    /// No transition on the issue matches the request.
+    NotAvailable,
+    /// More than one transition matches, as `(id, name)` sorted by ID. None of
+    /// them is chosen.
+    Ambiguous(Vec<(String, String)>),
+}
+
+/// Find the transition for one issue.
 ///
-/// There is no fallback: an issue that does not offer the requested transition
-/// is left alone rather than given a similar one.
+/// There is no fallback and no guess: an issue that does not offer the
+/// requested transition is left alone rather than given a similar one, and an
+/// issue where several transitions match (for example `Done` and `DONE`) is
+/// left alone rather than given whichever Jira happened to list first. The
+/// result therefore does not depend on the order of Jira's response.
 pub(crate) fn resolve_transition(
     available: &[AvailableTransition],
     request: &TransitionRequest,
-) -> Option<ResolvedTransition> {
-    let found = match request {
-        TransitionRequest::ByName(name) => available.iter().find(|t| same_name(&t.name, name)),
+) -> Result<ResolvedTransition, Unresolved> {
+    let matches: Vec<&AvailableTransition> = match request {
+        TransitionRequest::ByName(name) => available
+            .iter()
+            .filter(|t| same_name(&t.name, name))
+            .collect(),
         TransitionRequest::ById { id, name } => available
             .iter()
-            .find(|t| t.id == *id && same_name(&t.name, name)),
-        TransitionRequest::Unresolvable(_) => None,
-    }?;
+            .filter(|t| t.id == *id && same_name(&t.name, name))
+            .collect(),
+        TransitionRequest::Unresolvable(_) => Vec::new(),
+    };
 
-    Some(ResolvedTransition {
-        id: found.id.clone(),
-        name: found.name.clone(),
-        to_status: found.to.as_ref().map(|to| to.name.clone()),
-    })
+    match matches.as_slice() {
+        [] => Err(Unresolved::NotAvailable),
+        [found] => Ok(ResolvedTransition {
+            id: found.id.clone(),
+            name: found.name.clone(),
+            to_status: found.to.as_ref().map(|to| to.name.clone()),
+        }),
+        several => {
+            let mut candidates: Vec<(String, String)> = several
+                .iter()
+                .map(|t| (t.id.clone(), t.name.clone()))
+                .collect();
+            candidates.sort();
+            Err(Unresolved::Ambiguous(candidates))
+        }
+    }
 }
 
 fn unavailable_message(key: &str, request: &TransitionRequest) -> String {
@@ -661,12 +689,52 @@ fn unavailable_message(key: &str, request: &TransitionRequest) -> String {
     }
 }
 
+fn ambiguous_message(
+    key: &str,
+    request: &TransitionRequest,
+    candidates: &[(String, String)],
+) -> String {
+    let requested = match request {
+        TransitionRequest::ByName(name) => name.as_str(),
+        TransitionRequest::ById { id, .. } => id.as_str(),
+        TransitionRequest::Unresolvable(_) => "",
+    };
+    let listed = candidates
+        .iter()
+        .map(|(id, name)| format!("{id} {name:?}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "{key}: transition {requested:?} is ambiguous on this issue, it matches {} transitions \
+         ({listed}), so none is run. Pass the ID of the intended transition, or narrow the query",
+        candidates.len()
+    )
+}
+
+/// Why an issue gets no transition request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Skipped {
+    /// Several transitions matched, as opposed to none or a failed lookup.
+    pub ambiguous: bool,
+    /// The error reported for the issue, starting with its key.
+    pub message: String,
+}
+
+impl Skipped {
+    fn not_available(message: String) -> Self {
+        Self {
+            ambiguous: false,
+            message,
+        }
+    }
+}
+
 /// The outcome of resolving the requested transition for one issue.
 #[derive(Debug)]
 pub(crate) struct IssuePlan {
     pub key: String,
     /// The transition to run, or why there is none.
-    pub outcome: Result<ResolvedTransition, String>,
+    pub outcome: Result<ResolvedTransition, Skipped>,
 }
 
 impl IssuePlan {
@@ -675,9 +743,24 @@ impl IssuePlan {
         available: &[AvailableTransition],
         request: &TransitionRequest,
     ) -> Self {
-        let outcome = resolve_transition(available, request)
-            .ok_or_else(|| unavailable_message(&key, request));
+        let outcome =
+            resolve_transition(available, request).map_err(|unresolved| match unresolved {
+                Unresolved::NotAvailable => {
+                    Skipped::not_available(unavailable_message(&key, request))
+                }
+                Unresolved::Ambiguous(candidates) => Skipped {
+                    ambiguous: true,
+                    message: ambiguous_message(&key, request, &candidates),
+                },
+            });
         Self { key, outcome }
+    }
+
+    fn failed(key: String, message: String) -> Self {
+        Self {
+            key,
+            outcome: Err(Skipped::not_available(message)),
+        }
     }
 }
 
@@ -719,10 +802,7 @@ async fn plan_transitions(
             (plan, request)
         }
         Err(err) => (
-            IssuePlan {
-                key: first_key.clone(),
-                outcome: Err(format!("{err:#}")),
-            },
+            IssuePlan::failed(first_key.clone(), format!("{err:#}")),
             TransitionRequest::for_unreadable_first_issue(requested),
         ),
     };
@@ -731,10 +811,10 @@ async fn plan_transitions(
     plans.push(first_plan);
 
     if matches!(request, TransitionRequest::Unresolvable(_)) {
-        plans.extend(rest.iter().map(|key| IssuePlan {
-            key: key.clone(),
-            outcome: Err(unavailable_message(key, &request)),
-        }));
+        plans.extend(
+            rest.iter()
+                .map(|key| IssuePlan::failed(key.clone(), unavailable_message(key, &request))),
+        );
         return Ok(plans);
     }
 
@@ -750,10 +830,7 @@ async fn plan_transitions(
             async move {
                 let plan = match fetch_transitions(&client, &key).await {
                     Ok(available) => IssuePlan::for_issue(key, &available, &request),
-                    Err(err) => IssuePlan {
-                        key,
-                        outcome: Err(format!("{err:#}")),
-                    },
+                    Err(err) => IssuePlan::failed(key, format!("{err:#}")),
                 };
                 Ok((idx, plan))
             }
@@ -789,11 +866,15 @@ fn transition_rows(plans: &[IssuePlan]) -> Vec<TransitionRow<'_>> {
                 to_status: resolved.to_status.as_deref().unwrap_or(""),
                 action: "would transition",
             },
-            Err(_) => TransitionRow {
+            Err(skipped) => TransitionRow {
                 key: plan.key.as_str(),
                 transition: "",
                 to_status: "",
-                action: "not available",
+                action: if skipped.ambiguous {
+                    "ambiguous"
+                } else {
+                    "not available"
+                },
             },
         })
         .collect()
@@ -813,7 +894,7 @@ async fn apply_transitions(
     for plan in plans {
         match plan.outcome {
             Ok(resolved) => jobs.push((plan.key, resolved)),
-            Err(message) => problems.push(message),
+            Err(skipped) => problems.push(skipped.message),
         }
     }
     let total = jobs.len() + problems.len();
@@ -1098,7 +1179,10 @@ mod tests {
     fn a_transition_that_is_not_offered_does_not_resolve() {
         let list = available(&[("11", "Start work", "Analysis")]);
         let request = TransitionRequest::ByName("Done".into());
-        assert_eq!(resolve_transition(&list, &request), None);
+        assert_eq!(
+            resolve_transition(&list, &request),
+            Err(Unresolved::NotAvailable)
+        );
     }
 
     #[test]
@@ -1112,8 +1196,14 @@ mod tests {
         let missing = available(&[("11", "In Progress", "X")]);
 
         assert_eq!(resolve_transition(&same, &request).unwrap().id, "21");
-        assert_eq!(resolve_transition(&other_workflow, &request), None);
-        assert_eq!(resolve_transition(&missing, &request), None);
+        assert_eq!(
+            resolve_transition(&other_workflow, &request),
+            Err(Unresolved::NotAvailable)
+        );
+        assert_eq!(
+            resolve_transition(&missing, &request),
+            Err(Unresolved::NotAvailable)
+        );
     }
 
     #[test]
@@ -1172,8 +1262,14 @@ mod tests {
         );
 
         let elsewhere = available(&[("21", "Done", "Done"), ("22", "21", "Done")]);
-        assert_eq!(resolve_transition(&elsewhere, &request), None);
-        assert_eq!(resolve_transition(&first, &request), None);
+        assert_eq!(
+            resolve_transition(&elsewhere, &request),
+            Err(Unresolved::NotAvailable)
+        );
+        assert_eq!(
+            resolve_transition(&first, &request),
+            Err(Unresolved::NotAvailable)
+        );
     }
 
     /// A number that is a name on the first issue (and not an ID) is a name.
@@ -1196,7 +1292,10 @@ mod tests {
             panic!("expected an ambiguous request, got {request:?}");
         };
         assert!(reason.contains("ambiguous"), "{reason}");
-        assert_eq!(resolve_transition(&first, &request), None);
+        assert_eq!(
+            resolve_transition(&first, &request),
+            Err(Unresolved::NotAvailable)
+        );
 
         // The other ID is not affected.
         assert_eq!(
@@ -1231,6 +1330,100 @@ mod tests {
             TransitionRequest::for_unreadable_first_issue("21"),
             TransitionRequest::Unresolvable(_)
         ));
+    }
+
+    fn reversed(list: &[AvailableTransition]) -> Vec<AvailableTransition> {
+        list.iter().rev().cloned().collect()
+    }
+
+    fn candidates(items: &[(&str, &str)]) -> Unresolved {
+        Unresolved::Ambiguous(
+            items
+                .iter()
+                .map(|(id, name)| (id.to_string(), name.to_string()))
+                .collect(),
+        )
+    }
+
+    /// `Done` and `DONE` both match `--transition Done`. Taking the first one
+    /// made the transition depend on the order of Jira's response.
+    #[test]
+    fn case_variants_of_a_name_are_ambiguous_in_either_order() {
+        let list = available(&[("11", "Done", "Resolved"), ("21", "DONE", "Cancelled")]);
+        let request = TransitionRequest::ByName("Done".into());
+        let expected = Err(candidates(&[("11", "Done"), ("21", "DONE")]));
+
+        assert_eq!(resolve_transition(&list, &request), expected);
+        assert_eq!(resolve_transition(&reversed(&list), &request), expected);
+    }
+
+    #[test]
+    fn identical_names_are_ambiguous() {
+        let list = available(&[("21", "Done", "Cancelled"), ("11", "Done", "Resolved")]);
+        let request = TransitionRequest::ByName("done".into());
+        assert_eq!(
+            resolve_transition(&list, &request),
+            Err(candidates(&[("11", "Done"), ("21", "Done")]))
+        );
+    }
+
+    /// Names that only collide after Unicode lowercasing are ambiguous too:
+    /// `CAFÉ`/`Café`, and the Kelvin sign (U+212A), which lowercases to `k`.
+    #[test]
+    fn a_unicode_lowercase_collision_is_ambiguous_in_either_order() {
+        let accents = available(&[("11", "Café", "Open"), ("12", "CAFÉ", "Closed")]);
+        let request = TransitionRequest::ByName("café".into());
+        let expected = Err(candidates(&[("11", "Café"), ("12", "CAFÉ")]));
+        assert_eq!(resolve_transition(&accents, &request), expected);
+        assert_eq!(resolve_transition(&reversed(&accents), &request), expected);
+
+        let kelvin = available(&[("31", "Kanban", "Open"), ("32", "\u{212A}anban", "Closed")]);
+        let request = TransitionRequest::ByName("kanban".into());
+        let expected = Err(candidates(&[("31", "Kanban"), ("32", "\u{212A}anban")]));
+        assert_eq!(resolve_transition(&kelvin, &request), expected);
+        assert_eq!(resolve_transition(&reversed(&kelvin), &request), expected);
+    }
+
+    /// The ID still picks one of several transitions with the same name, on
+    /// the first issue and on the others, whatever the order.
+    #[test]
+    fn an_explicit_id_disambiguates_duplicate_names() {
+        let first = available(&[("11", "Done", "Resolved"), ("21", "DONE", "Cancelled")]);
+        let other = reversed(&first);
+
+        for (requested, id) in [("11", "11"), ("21", "21")] {
+            let request = TransitionRequest::from_first_issue(&first, requested);
+            assert!(
+                matches!(&request, TransitionRequest::ById { id: pinned, .. } if pinned == id),
+                "{request:?}"
+            );
+            assert_eq!(resolve_transition(&first, &request).unwrap().id, id);
+            assert_eq!(resolve_transition(&other, &request).unwrap().id, id);
+        }
+    }
+
+    /// The error names every candidate, in the same order whatever Jira
+    /// returned, and the issue is marked ambiguous rather than not available.
+    #[test]
+    fn an_ambiguous_issue_lists_the_candidates_independent_of_order() {
+        let list = available(&[("21", "DONE", "Cancelled"), ("11", "Done", "Resolved")]);
+        let request = TransitionRequest::ByName("Done".into());
+
+        let plan = IssuePlan::for_issue("B-1".into(), &list, &request);
+        let again = IssuePlan::for_issue("B-1".into(), &reversed(&list), &request);
+
+        let skipped = plan
+            .outcome
+            .expect_err("an ambiguous issue must not resolve");
+        assert!(skipped.ambiguous);
+        assert!(skipped.message.starts_with("B-1: "), "{}", skipped.message);
+        assert!(skipped.message.contains("ambiguous"), "{}", skipped.message);
+        assert!(
+            skipped.message.contains(r#"11 "Done", 21 "DONE""#),
+            "{}",
+            skipped.message
+        );
+        assert_eq!(again.outcome.expect_err("same request"), skipped);
     }
 
     fn transition_json(id: &str, name: &str, to: &str) -> Value {
@@ -1525,6 +1718,126 @@ mod tests {
         assert!(transition_posts(&server).await.is_empty());
     }
 
+    /// A-1 and C-1 offer one "Done", B-1 offers "Done" and "DONE". Built in
+    /// both response orders for B-1. B-1 must receive no POST at all.
+    async fn server_with_an_ambiguous_issue(reverse: bool) -> MockServer {
+        let server = MockServer::start().await;
+        mount_search(&server, &["A-1", "B-1", "C-1"]).await;
+        let mut duplicates = vec![
+            transition_json("11", "Done", "Resolved"),
+            transition_json("21", "DONE", "Cancelled"),
+        ];
+        if reverse {
+            duplicates.reverse();
+        }
+        mount_issue(&server, "A-1", &[transition_json("31", "Done", "Done")]).await;
+        mount_issue_expecting(&server, "B-1", &duplicates, Some(0)).await;
+        mount_issue(&server, "C-1", &[transition_json("41", "done", "Done")]).await;
+        server
+    }
+
+    /// The ambiguous issue gets nothing, the others are transitioned, and the
+    /// command fails, whatever order Jira lists B-1's transitions in.
+    #[tokio::test]
+    async fn an_ambiguous_name_skips_that_issue_and_runs_the_others() {
+        for reverse in [false, true] {
+            let server = server_with_an_ambiguous_issue(reverse).await;
+            let renderer = OutputRenderer::new(OutputFormat::Json);
+            let ctx = jira_ctx(&server, &renderer);
+
+            let err = bulk_transition(&ctx, "project = X", "Done", true, true, 2)
+                .await
+                .expect_err("an ambiguous issue must fail the command");
+
+            assert!(format!("{err:#}").contains("1 of 3"), "{err:#}");
+            assert_eq!(
+                transition_posts(&server).await,
+                vec![
+                    ("A-1".to_string(), "31".to_string()),
+                    ("C-1".to_string(), "41".to_string())
+                ],
+                "B-1 must get no POST (reverse = {reverse})"
+            );
+        }
+    }
+
+    /// The first issue is the ambiguous one. A name does not depend on the
+    /// first issue, so the others still run.
+    #[tokio::test]
+    async fn an_ambiguous_first_issue_does_not_stop_a_name_on_the_others() {
+        let server = MockServer::start().await;
+        mount_search(&server, &["A-1", "B-1"]).await;
+        mount_issue_expecting(
+            &server,
+            "A-1",
+            &[
+                transition_json("21", "DONE", "Cancelled"),
+                transition_json("11", "Done", "Resolved"),
+            ],
+            Some(0),
+        )
+        .await;
+        mount_issue(&server, "B-1", &[transition_json("31", "Done", "Done")]).await;
+        let renderer = OutputRenderer::new(OutputFormat::Json);
+        let ctx = jira_ctx(&server, &renderer);
+
+        let err = bulk_transition(&ctx, "project = X", "Done", true, true, 2)
+            .await
+            .expect_err("the ambiguous first issue is an error");
+
+        assert!(format!("{err:#}").contains("1 of 2"), "{err:#}");
+        assert_eq!(
+            transition_posts(&server).await,
+            vec![("B-1".to_string(), "31".to_string())]
+        );
+    }
+
+    /// The ID picks one of the duplicates on every issue.
+    #[tokio::test]
+    async fn an_explicit_id_runs_where_the_name_is_ambiguous() {
+        let server = MockServer::start().await;
+        mount_search(&server, &["A-1", "B-1"]).await;
+        let duplicates = [
+            transition_json("11", "Done", "Resolved"),
+            transition_json("21", "DONE", "Cancelled"),
+        ];
+        mount_issue(&server, "A-1", &duplicates).await;
+        let reversed: Vec<Value> = duplicates.iter().rev().cloned().collect();
+        mount_issue(&server, "B-1", &reversed).await;
+        let renderer = OutputRenderer::new(OutputFormat::Json);
+        let ctx = jira_ctx(&server, &renderer);
+
+        bulk_transition(&ctx, "project = X", "11", true, true, 2)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            transition_posts(&server).await,
+            vec![
+                ("A-1".to_string(), "11".to_string()),
+                ("B-1".to_string(), "11".to_string())
+            ]
+        );
+    }
+
+    /// The preview marks the ambiguous issue and sends nothing.
+    #[tokio::test]
+    async fn the_preview_marks_an_ambiguous_issue() {
+        let server = server_with_an_ambiguous_issue(false).await;
+        let renderer = OutputRenderer::new(OutputFormat::Json);
+        let ctx = jira_ctx(&server, &renderer);
+        let keys: Vec<String> = ["A-1", "B-1", "C-1"].map(String::from).to_vec();
+
+        let plans = plan_transitions(&ctx, &keys, "Done", 2).await.unwrap();
+        let rows = serde_json::to_value(transition_rows(&plans)).unwrap();
+
+        assert_eq!(rows[0]["action"], "would transition");
+        assert_eq!(rows[1]["key"], "B-1");
+        assert_eq!(rows[1]["action"], "ambiguous");
+        assert_eq!(rows[2]["action"], "would transition");
+        assert!(transition_posts(&server).await.is_empty());
+    }
+
     /// Without `--execute` the command only previews: what would run on each
     /// issue is resolved and shown, and nothing is sent.
     #[tokio::test]
@@ -1556,7 +1869,14 @@ mod tests {
             },
             IssuePlan {
                 key: "B-1".into(),
-                outcome: Err("B-1: not available".into()),
+                outcome: Err(Skipped::not_available("B-1: not available".into())),
+            },
+            IssuePlan {
+                key: "C-1".into(),
+                outcome: Err(Skipped {
+                    ambiguous: true,
+                    message: "C-1: ambiguous".into(),
+                }),
             },
         ];
         let rows = serde_json::to_value(transition_rows(&plans)).unwrap();
@@ -1565,7 +1885,8 @@ mod tests {
             json!([
                 {"key": "A-1", "transition": "Complete", "to_status": "Done",
                  "action": "would transition"},
-                {"key": "B-1", "transition": "", "to_status": "", "action": "not available"}
+                {"key": "B-1", "transition": "", "to_status": "", "action": "not available"},
+                {"key": "C-1", "transition": "", "to_status": "", "action": "ambiguous"}
             ])
         );
     }
