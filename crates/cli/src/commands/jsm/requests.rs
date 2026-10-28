@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::{Deserialize, Serialize};
 use url::form_urlencoded;
 
@@ -246,7 +247,10 @@ pub async fn transition_request(
         id: String,
     }
 
-    let path = format!("/rest/servicedeskapi/request/{key}/transition");
+    let path = format!(
+        "/rest/servicedeskapi/request/{}/transition",
+        encode_path_segment(key)?
+    );
     let body = TransitionBody {
         id: transition_id.to_string(),
     };
@@ -387,7 +391,10 @@ pub async fn add_comment(
         public: bool,
     }
 
-    let path = format!("/rest/servicedeskapi/request/{key}/comment");
+    let path = format!(
+        "/rest/servicedeskapi/request/{}/comment",
+        encode_path_segment(key)?
+    );
     let comment = CommentBody { body, public };
 
     tracing::debug!("Adding comment to request {} (public: {})", key, public);
@@ -456,7 +463,10 @@ pub async fn add_participant(
         account_ids: Vec<String>,
     }
 
-    let path = format!("/rest/servicedeskapi/request/{key}/participant");
+    let path = format!(
+        "/rest/servicedeskapi/request/{}/participant",
+        encode_path_segment(key)?
+    );
     let body = AddParticipantBody {
         account_ids: account_ids.clone(),
     };
@@ -496,7 +506,10 @@ pub async fn remove_participant(
         account_ids: Vec<String>,
     }
 
-    let path = format!("/rest/servicedeskapi/request/{key}/participant");
+    let path = format!(
+        "/rest/servicedeskapi/request/{}/participant",
+        encode_path_segment(key)?
+    );
     let body = RemoveParticipantBody {
         account_ids: account_ids.clone(),
     };
@@ -526,7 +539,10 @@ pub async fn remove_participant(
 
 /// Subscribe to request notifications.
 pub async fn subscribe(ctx: &JsmContext<'_>, key: &str) -> Result<()> {
-    let path = format!("/rest/servicedeskapi/request/{key}/notification");
+    let path = format!(
+        "/rest/servicedeskapi/request/{}/notification",
+        encode_path_segment(key)?
+    );
 
     tracing::debug!("Subscribing to request {}", key);
     ctx.client
@@ -541,7 +557,10 @@ pub async fn subscribe(ctx: &JsmContext<'_>, key: &str) -> Result<()> {
 
 /// Unsubscribe from request notifications.
 pub async fn unsubscribe(ctx: &JsmContext<'_>, key: &str) -> Result<()> {
-    let path = format!("/rest/servicedeskapi/request/{key}/notification");
+    let path = format!(
+        "/rest/servicedeskapi/request/{}/notification",
+        encode_path_segment(key)?
+    );
 
     tracing::debug!("Unsubscribing from request {}", key);
     ctx.client

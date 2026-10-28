@@ -3179,3 +3179,110 @@ Changelog promoted to `## [0.12.0] - 2026-10-16` (one entry, the comment visibil
 #170), version bumped in the root manifest and the five internal pins. Minor bump: new flags and
 an observable change (`comments update` without a visibility flag reads before it writes). Shipped: tag `v0.12.0` on `f50e7fe`, 14 release assets, six crates on crates.io, Homebrew
 formula at 0.12.0, downloaded macOS artifact verified. Record: `docs/16102026_release_0_12_0_plan.md`.
+
+## 2026-10-27: percent-encode identifiers in write and delete paths (branch `fix/encode-path-identifiers`, PR #178)
+
+Request paths are built with `format!`, and most write and delete call sites interpolated caller-provided
+identifiers as they were. A `?`, `#` or `/` in such a value can change the request target, and the central
+guard in `crates/api` cannot catch a `?`. The Confluence and Jira multipart uploads build their URL by hand
+and skip the guard, `opsgenie heartbeat get a/ping` reached the ping endpoint, and Bitbucket names read from
+git remotes were not checked at all.
+
+### The change
+`crates/api/src/path.rs`: `encode_path_segment()` percent-encodes everything outside the RFC 3986 unreserved
+set and rejects empty values, `/`, `.` and `..` with the new `ApiError::InvalidIdentifier`.
+`bitbucket/utils.rs` re-exports it. Every POST, PUT, PATCH and DELETE (including `delete_no_content`,
+`delete_with_body` and both multipart uploads) with a non-numeric identifier in the path now uses it, in the
+Bitbucket, Jira, Confluence, JSM, Opsgenie and Bamboo command modules; reads that feed a write share the
+encoded path, and two query values (`roles remove-actor --user`, `watchers remove`) use
+`encode_query_component`. `opsgenie heartbeat get` and `ping` are encoded too.
+`bitbucket/git.rs::parse_git_remote` accepts a workspace and slug only if they match the Bitbucket
+character set and are not dot segments, and validates the path as written in the remote (a query,
+fragment, backslash, control character or dot segment is rejected before the URL parser can hide it);
+otherwise it returns `None` and logs a fixed reason at debug level.
+Read-only requests, the raw `api` passthrough and a few query values are left as they were, listed in
+`docs/27102026_path_identifier_encoding.md`.
+
+### Tests
+Unit tests for the helper and for `parse_path_segments` (valid remotes, names with `?`, `#`, `%`, space).
+New `path_encoding_tests.rs` modules per product, with wiremock, assert the received path: `bb pr
+reopen-comment`, `jira roles remove-actor`, Jira comment delete and watcher remove, Confluence label remove
+and attachment upload, `opsgenie team remove-member`, heartbeat get and ping, Bamboo label remove and JSM
+feedback delete. Rejected values must not produce the write request.
+## 2026-10-27: confluence bulk delete preview and confirmation (branch `fix/confluence-bulk-delete-confirmation`, PR #176)
+
+`confluence bulk delete` deleted every page a CQL query matched as soon as it ran, up to one
+search page of 1000. It asked nothing, and without a terminal it deleted all the same. Only the
+opt-in `--dry-run` previewed. `bb bulk delete-branches` and `bb bulk archive-repos` already list
+by default and gate the change behind `--execute` and a typed confirmation.
+
+### The change
+`crates/cli/src/commands/confluence/bulk.rs`: `bulk_delete_pages()` now lists the matches (ID and
+title, with a hint on stderr) unless `execute` is set. With `execute` it calls
+`confirm_destructive()` with the match count as the expected text, unless `assume_yes` is set,
+before the first DELETE. The body lives in `delete_pages_with()`, which takes the confirmation as
+a parameter so tests do not depend on a terminal. `search_pages()` now returns the title next to
+the ID, and `search_page_ids()` (used by `add-labels`) wraps it, so `add-labels` is unchanged.
+`crates/cli/src/commands/confluence/mod.rs`: `BulkCommands::Delete` gets `--execute` and `--yes`;
+`--dry-run` stays, hidden, and conflicts with `--execute`. README, `docs/examples/confluence/bulk-cleanup.sh`,
+`docs/08092026_remaining_hardening.md`, `docs/index.md` and the new
+`docs/27102026_confluence_bulk_delete_safety.md` follow the change.
+
+### Tests
+Unit tests in `bulk.rs` over wiremock: listing sends no DELETE, `--yes` alone does not delete,
+`--execute` without a terminal refuses (through `confirm_destructive_on(.., false)`), the
+confirmation expects the match count and names the trash and the 1000 page cap, a passed
+confirmation and `--yes` delete every match, no matches asks nothing. End-to-end tests in
+`crates/cli/tests/confluence_bulk_delete_e2e.rs` drive the binary with stdin closed: listing,
+`--yes` without `--execute`, deprecated `--dry-run`, `--dry-run --execute` rejected by clap,
+`--execute` refused without `--yes`, `--execute --yes` deletes. Breaking change for scripts: they
+must pass `--execute --yes`.
+## 2026-10-27: jira bulk safety and per-issue transitions (branch `fix/jira-bulk-safety`, PR #177)
+
+`jira bulk transition`, `assign` and `label` changed every issue a JQL query matched as soon as they
+ran: no preview unless `--dry-run` was passed, no confirmation, and a run without a terminal wrote
+too. `label --action set` without `--labels` sent `labels: []` and cleared every label on every
+match. Separately, `bulk transition` resolved the transition on the first matching issue and sent
+that ID to all issues, although IDs are only unique within one workflow.
+
+### The change
+`crates/cli/src/commands/jira/bulk.rs`: new `AvailableTransition`, `TransitionRequest`
+(`ByName` or `ById`, pinned to the name on the first issue), `ResolvedTransition` and the pure
+`resolve_transition()`; `plan_transitions()` reads each issue's transitions and
+`apply_transitions()` sends only the resolved ones, reports every failure with its key and fails
+the command when any issue was not transitioned. `bulk_transition`, `bulk_assign` and `bulk_label`
+take `execute` and `assume_yes`: listing by default, `confirm_destructive` with the match count
+before the first write. `normalize_labels()` rejects an empty `--labels` for every action.
+`get_transition_id()` is gone. `crates/cli/src/commands/jira/mod.rs`: `--execute`, `--yes` and a
+hidden `--dry-run` (conflicts with `--execute`) on the three commands, `--labels` required.
+README, `docs/examples/jira/bulk-transition.sh` and `project-cleanup.sh` use the new flags.
+CHANGELOG has a breaking Changed bullet and a Fixed bullet. Record: `docs/27102026_jira_bulk_safety.md`.
+
+### Tests
+Unit tests in `bulk.rs` for the resolution rules, the label check, the preview rows and the three
+handlers over wiremock (two workflows where ID 21 is "In Progress" once and "Done" once; no POST or
+PUT without `--execute`). New `crates/cli/tests/jira_bulk_safety_e2e.rs` drives the binary without a
+terminal: refusal of `--execute` without `--yes`, `--execute --yes` writes, the preview output,
+`--labels` validation, `--dry-run` and its conflict with `--execute`.
+
+Review round 1: a transition value that is an ID and also the name of another transition on the
+first issue is ambiguous and applied to no issue, a number that matches nothing on the first issue
+is applied to no issue, name matching is Unicode aware, an unreadable first issue no longer aborts
+a transition given by name (an ID stays closed), zero matches render an empty list through
+`render_list_or_empty` (`[]` under `-f json`), and the preview and refusal tests mount their
+mutation mocks with `expect(0)`.
+
+## 2026-10-28: PR #177 review correction
+
+Reject duplicate case-insensitive transition names per issue, with an explicit
+ambiguity error and no POST for that issue. Preserve explicit-ID resolution.
+Resolver and binary HTTP tests cover identical names, ASCII and Unicode case
+collisions, reversed response order, and partial success in a mixed batch.
+
+## 2026-10-28: prepare v0.13.0 safety release
+
+Integrate #178, #176 and corrected #177 without dropping identifier encoding,
+preview defaults or confirmation gates. Prepare a minor pre-1.0 release because
+scripts must opt into bulk mutations. Update workspace/internal pins, lockfile,
+changelog and design-note status. Preserve contributor commit ancestry in the
+maintainer integration branch because the connected app cannot update the fork.

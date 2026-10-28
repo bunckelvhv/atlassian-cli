@@ -195,7 +195,10 @@ pub async fn create_project(
         payload["description"] = serde_json::json!(desc);
     }
 
-    let path = format!("/2.0/workspaces/{workspace}/projects");
+    let path = format!(
+        "/2.0/workspaces/{}/projects",
+        encode_path_segment(workspace)?
+    );
     let project: Project = ctx
         .client
         .post(&path, &payload)
@@ -246,7 +249,8 @@ pub async fn update_project(
     }
 
     let path = format!(
-        "/2.0/workspaces/{workspace}/projects/{}",
+        "/2.0/workspaces/{}/projects/{}",
+        encode_path_segment(workspace)?,
         encode_path_segment(project_key)?
     );
     let project: Project = ctx.client.put(&path, &payload).await.with_context(|| {
@@ -294,7 +298,8 @@ pub async fn delete_project(
     }
 
     let path = format!(
-        "/2.0/workspaces/{workspace}/projects/{}",
+        "/2.0/workspaces/{}/projects/{}",
+        encode_path_segment(workspace)?,
         encode_path_segment(project_key)?
     );
     let _: serde_json::Value = ctx.client.delete(&path).await.with_context(|| {

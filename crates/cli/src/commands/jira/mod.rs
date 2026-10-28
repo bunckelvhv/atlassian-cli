@@ -20,6 +20,9 @@ mod projects;
 pub mod utils;
 mod webhooks;
 
+#[cfg(test)]
+mod path_encoding_tests;
+
 use issues::{CommentVisibility, VisibilityChange};
 use utils::JiraContext;
 
@@ -794,21 +797,39 @@ enum WorkflowCommands {
 #[derive(Subcommand, Debug, Clone)]
 enum BulkCommands {
     /// Bulk transition issues
+    ///
+    /// Lists the matching issues and the transition each would run, without
+    /// changing anything. Pass --execute to apply it.
     Transition {
         /// JQL query to select issues
         #[arg(long)]
         jql: String,
-        /// Transition name or ID
+        /// Transition name or ID, resolved on each issue separately. A name is
+        /// matched on every issue by comparing Unicode lowercase forms. A value
+        /// that is a transition
+        /// ID on the first matching issue is applied only where that ID has the
+        /// same name. If it is also the name of another transition there, or if
+        /// it is a number that matches nothing there, it is applied to no issue
         #[arg(long)]
         transition: String,
-        /// Dry run mode
+        /// Apply the change. Without this, the issues are only listed
         #[arg(long)]
+        execute: bool,
+        /// Skip the typed confirmation required by --execute
+        #[arg(long)]
+        yes: bool,
+        /// Deprecated: listing is now the default. Cannot be combined with
+        /// --execute, which it would otherwise silently override
+        #[arg(long, hide = true, conflicts_with = "execute")]
         dry_run: bool,
         /// Concurrency level
         #[arg(long, default_value_t = 4)]
         concurrency: usize,
     },
     /// Bulk assign issues
+    ///
+    /// Lists the matching issues without changing anything. Pass --execute to
+    /// overwrite their assignee.
     Assign {
         /// JQL query to select issues
         #[arg(long)]
@@ -816,14 +837,25 @@ enum BulkCommands {
         /// Assignee account ID
         #[arg(long)]
         assignee: String,
-        /// Dry run mode
+        /// Apply the change. Without this, the issues are only listed
         #[arg(long)]
+        execute: bool,
+        /// Skip the typed confirmation required by --execute
+        #[arg(long)]
+        yes: bool,
+        /// Deprecated: listing is now the default. Cannot be combined with
+        /// --execute, which it would otherwise silently override
+        #[arg(long, hide = true, conflicts_with = "execute")]
         dry_run: bool,
         /// Concurrency level
         #[arg(long, default_value_t = 4)]
         concurrency: usize,
     },
     /// Bulk label operations
+    ///
+    /// Lists the matching issues without changing anything. Pass --execute to
+    /// add, remove or set the labels. A missing or empty --labels is rejected
+    /// for every action, so `set` cannot clear all labels implicitly.
     Label {
         /// JQL query to select issues
         #[arg(long)]
@@ -831,11 +863,18 @@ enum BulkCommands {
         /// Action: add, remove, or set
         #[arg(long)]
         action: String,
-        /// Labels to apply
-        #[arg(long, value_delimiter = ',')]
+        /// Labels to apply (comma-separated, at least one)
+        #[arg(long, value_delimiter = ',', required = true)]
         labels: Vec<String>,
-        /// Dry run mode
+        /// Apply the change. Without this, the issues are only listed
         #[arg(long)]
+        execute: bool,
+        /// Skip the typed confirmation required by --execute
+        #[arg(long)]
+        yes: bool,
+        /// Deprecated: listing is now the default. Cannot be combined with
+        /// --execute, which it would otherwise silently override
+        #[arg(long, hide = true, conflicts_with = "execute")]
         dry_run: bool,
         /// Concurrency level
         #[arg(long, default_value_t = 4)]
@@ -1382,19 +1421,33 @@ pub async fn execute(args: JiraArgs, client: ApiClient, renderer: &OutputRendere
             BulkCommands::Transition {
                 jql,
                 transition,
+                execute,
+                yes,
                 dry_run,
                 concurrency,
-            } => bulk::bulk_transition(&ctx, &jql, &transition, dry_run, concurrency).await,
+            } => {
+                // clap rejects --dry-run next to --execute, so the flag is
+                // redundant. It still means "do not change anything".
+                let execute = execute && !dry_run;
+                bulk::bulk_transition(&ctx, &jql, &transition, execute, yes, concurrency).await
+            }
             BulkCommands::Assign {
                 jql,
                 assignee,
+                execute,
+                yes,
                 dry_run,
                 concurrency,
-            } => bulk::bulk_assign(&ctx, &jql, &assignee, dry_run, concurrency).await,
+            } => {
+                let execute = execute && !dry_run;
+                bulk::bulk_assign(&ctx, &jql, &assignee, execute, yes, concurrency).await
+            }
             BulkCommands::Label {
                 jql,
                 action,
                 labels,
+                execute,
+                yes,
                 dry_run,
                 concurrency,
             } => {
@@ -1409,7 +1462,8 @@ pub async fn execute(args: JiraArgs, client: ApiClient, renderer: &OutputRendere
                         ))
                     }
                 };
-                bulk::bulk_label(&ctx, &jql, label_action, labels, dry_run, concurrency).await
+                let execute = execute && !dry_run;
+                bulk::bulk_label(&ctx, &jql, label_action, labels, execute, yes, concurrency).await
             }
             BulkCommands::Export {
                 jql,

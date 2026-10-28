@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -82,7 +83,10 @@ pub async fn delete_folder(
     }
 
     ctx.client
-        .delete_no_content(&format!("/wiki/api/v2/folders/{folder_id}"))
+        .delete_no_content(&format!(
+            "/wiki/api/v2/folders/{}",
+            encode_path_segment(folder_id)?
+        ))
         .await
         .with_context(|| format!("Failed to delete folder {folder_id}"))?;
 

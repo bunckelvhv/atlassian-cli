@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -144,9 +145,10 @@ pub async fn update_space(
     description: Option<&str>,
 ) -> Result<()> {
     // Get current space first
+    let space_path = format!("/wiki/api/v2/spaces/{}", encode_path_segment(space_id)?);
     let current: Value = ctx
         .client
-        .get(&format!("/wiki/api/v2/spaces/{}", space_id))
+        .get(&space_path)
         .await
         .with_context(|| format!("Failed to get space {}", space_id))?;
 
@@ -167,7 +169,7 @@ pub async fn update_space(
 
     let _: Value = ctx
         .client
-        .put(&format!("/wiki/api/v2/spaces/{}", space_id), &payload)
+        .put(&space_path, &payload)
         .await
         .with_context(|| format!("Failed to update space {}", space_id))?;
 
@@ -191,7 +193,10 @@ pub async fn delete_space(ctx: &ConfluenceContext<'_>, space_id: &str, force: bo
 
     let _: Value = ctx
         .client
-        .delete(&format!("/wiki/api/v2/spaces/{}", space_id))
+        .delete(&format!(
+            "/wiki/api/v2/spaces/{}",
+            encode_path_segment(space_id)?
+        ))
         .await
         .with_context(|| format!("Failed to delete space {}", space_id))?;
 
@@ -237,7 +242,10 @@ pub async fn add_space_permission(
     let _: Value = ctx
         .client
         .post(
-            &format!("/wiki/rest/api/space/{}/permission", space_key),
+            &format!(
+                "/wiki/rest/api/space/{}/permission",
+                encode_path_segment(space_key)?
+            ),
             &payload,
         )
         .await

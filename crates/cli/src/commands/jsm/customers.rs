@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::Serialize;
 
 use super::utils::{JsmContext, User};
@@ -42,7 +43,10 @@ pub async fn create_customer(
 
 /// Revoke portal-only access for a user.
 pub async fn revoke_portal_access(ctx: &JsmContext<'_>, account_id: &str) -> Result<()> {
-    let path = format!("/rest/servicedeskapi/customer/user/{account_id}/revoke-portal-only-access");
+    let path = format!(
+        "/rest/servicedeskapi/customer/user/{}/revoke-portal-only-access",
+        encode_path_segment(account_id)?
+    );
 
     tracing::debug!("Revoking portal access for user {}", account_id);
     ctx.client

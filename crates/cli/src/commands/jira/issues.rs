@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::{anyhow, bail, Context, Result};
 use atlassian_cli_api::pagination::{fetch_paged, JiraPage, PageLimits};
+use atlassian_cli_api::path::encode_path_segment;
 use atlassian_cli_output::{ListMeta, OutputFormat};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -550,7 +551,10 @@ pub async fn update_issue(
         let payload = build_update_payload(summary, description, priority, custom_fields)?;
         let _: Value = ctx
             .client
-            .put(&format!("/rest/api/3/issue/{key}"), &payload)
+            .put(
+                &format!("/rest/api/3/issue/{}", encode_path_segment(key)?),
+                &payload,
+            )
             .await
             .with_context(|| format!("Failed to update issue {key}"))?;
     }
@@ -578,7 +582,7 @@ pub async fn delete_issue(ctx: &JiraContext<'_>, key: &str, force: bool) -> Resu
 
     let _: Value = ctx
         .client
-        .delete(&format!("/rest/api/3/issue/{key}"))
+        .delete(&format!("/rest/api/3/issue/{}", encode_path_segment(key)?))
         .await
         .with_context(|| format!("Failed to delete issue {key}"))?;
 
@@ -735,7 +739,13 @@ async fn apply_transition(ctx: &JiraContext<'_>, key: &str, t: &Transition) -> R
     let payload = serde_json::json!({ "transition": { "id": t.id } });
     let _: Value = ctx
         .client
-        .post(&format!("/rest/api/3/issue/{key}/transitions"), &payload)
+        .post(
+            &format!(
+                "/rest/api/3/issue/{}/transitions",
+                encode_path_segment(key)?
+            ),
+            &payload,
+        )
         .await
         .with_context(|| format!("Failed to transition issue {key} via {:?}", t.name))?;
     Ok(())
@@ -976,7 +986,10 @@ pub async fn assign_issue(ctx: &JiraContext<'_>, key: &str, assignee: &str) -> R
 
     let _: Value = ctx
         .client
-        .put(&format!("/rest/api/3/issue/{key}/assignee"), &payload)
+        .put(
+            &format!("/rest/api/3/issue/{}/assignee", encode_path_segment(key)?),
+            &payload,
+        )
         .await
         .with_context(|| format!("Failed to assign issue {key}"))?;
 
@@ -995,7 +1008,10 @@ pub async fn unassign_issue(ctx: &JiraContext<'_>, key: &str) -> Result<()> {
 
     let _: Value = ctx
         .client
-        .put(&format!("/rest/api/3/issue/{key}/assignee"), &payload)
+        .put(
+            &format!("/rest/api/3/issue/{}/assignee", encode_path_segment(key)?),
+            &payload,
+        )
         .await
         .with_context(|| format!("Failed to unassign issue {key}"))?;
 
@@ -1055,7 +1071,7 @@ pub async fn add_watcher(ctx: &JiraContext<'_>, key: &str, user: &str) -> Result
     let _: Value = ctx
         .client
         .post(
-            &format!("/rest/api/3/issue/{key}/watchers"),
+            &format!("/rest/api/3/issue/{}/watchers", encode_path_segment(key)?),
             &user.to_string(),
         )
         .await
@@ -1073,7 +1089,9 @@ pub async fn remove_watcher(ctx: &JiraContext<'_>, key: &str, user: &str) -> Res
     let _: Value = ctx
         .client
         .delete(&format!(
-            "/rest/api/3/issue/{key}/watchers?accountId={user}"
+            "/rest/api/3/issue/{}/watchers?accountId={}",
+            encode_path_segment(key)?,
+            atlassian_cli_api::query::encode_query_component(user)
         ))
         .await
         .with_context(|| format!("Failed to remove watcher from {key}"))?;
@@ -1132,7 +1150,10 @@ pub async fn create_link(
 pub async fn delete_link(ctx: &JiraContext<'_>, link_id: &str) -> Result<()> {
     let _: Value = ctx
         .client
-        .delete(&format!("/rest/api/3/issueLink/{link_id}"))
+        .delete(&format!(
+            "/rest/api/3/issueLink/{}",
+            encode_path_segment(link_id)?
+        ))
         .await
         .with_context(|| format!("Failed to delete link {link_id}"))?;
 
@@ -1308,7 +1329,10 @@ pub async fn add_comment(
 
     let _: Value = ctx
         .client
-        .post(&format!("/rest/api/3/issue/{key}/comment"), &payload)
+        .post(
+            &format!("/rest/api/3/issue/{}/comment", encode_path_segment(key)?),
+            &payload,
+        )
         .await
         .with_context(|| format!("Failed to add comment to {key}"))?;
 
@@ -1333,17 +1357,18 @@ pub async fn update_comment(
     body: &str,
     change: &VisibilityChange,
 ) -> Result<()> {
+    let comment_path = format!(
+        "/rest/api/3/issue/{}/comment/{}",
+        encode_path_segment(key)?,
+        encode_path_segment(comment_id)?
+    );
     let visibility = match change {
         VisibilityChange::Keep => {
             // Jira replaces visibility on every update. Read the comment and
             // restate its restriction, so an edit never republishes it.
-            let current: Value = ctx
-                .client
-                .get(&format!("/rest/api/3/issue/{key}/comment/{comment_id}"))
-                .await
-                .with_context(|| {
-                    format!("Failed to read comment {comment_id} before updating it")
-                })?;
+            let current: Value = ctx.client.get(&comment_path).await.with_context(|| {
+                format!("Failed to read comment {comment_id} before updating it")
+            })?;
             existing_visibility(&current).with_context(|| {
                 format!("Failed to keep the restriction of comment {comment_id}")
             })?
@@ -1355,10 +1380,7 @@ pub async fn update_comment(
 
     let _: Value = ctx
         .client
-        .put(
-            &format!("/rest/api/3/issue/{key}/comment/{comment_id}"),
-            &payload,
-        )
+        .put(&comment_path, &payload)
         .await
         .with_context(|| format!("Failed to update comment {comment_id}"))?;
 
@@ -1374,7 +1396,11 @@ pub async fn update_comment(
 pub async fn delete_comment(ctx: &JiraContext<'_>, key: &str, comment_id: &str) -> Result<()> {
     let _: Value = ctx
         .client
-        .delete(&format!("/rest/api/3/issue/{key}/comment/{comment_id}"))
+        .delete(&format!(
+            "/rest/api/3/issue/{}/comment/{}",
+            encode_path_segment(key)?,
+            encode_path_segment(comment_id)?
+        ))
         .await
         .with_context(|| format!("Failed to delete comment {comment_id}"))?;
 

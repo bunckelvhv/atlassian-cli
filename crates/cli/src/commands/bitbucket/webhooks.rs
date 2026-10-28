@@ -88,7 +88,11 @@ pub async fn create_webhook(
         payload["description"] = serde_json::json!(desc);
     }
 
-    let path = format!("/2.0/repositories/{workspace}/{repo_slug}/hooks");
+    let path = format!(
+        "/2.0/repositories/{}/{}/hooks",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
+    );
     let webhook: Webhook = ctx
         .client
         .post(&path, &payload)
@@ -215,7 +219,11 @@ pub async fn add_ssh_key(
         "key": key
     });
 
-    let path = format!("/2.0/repositories/{workspace}/{repo_slug}/deploy-keys");
+    let path = format!(
+        "/2.0/repositories/{}/{}/deploy-keys",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
+    );
     let ssh_key: SshKey = ctx
         .client
         .post(&path, &payload)

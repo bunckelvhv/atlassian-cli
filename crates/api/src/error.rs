@@ -37,6 +37,9 @@ pub enum ApiError {
 
     #[error("Invalid response format: {0}")]
     InvalidResponse(String),
+
+    #[error("Invalid identifier: {message}")]
+    InvalidIdentifier { message: String },
 }
 
 impl ApiError {

@@ -11,6 +11,57 @@ resolve. `git log` remains the complete record.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-28
+
+### Security
+
+- Identifiers passed to write and delete commands are now percent-encoded in
+  every product (Bitbucket, Jira, Confluence, JSM, Opsgenie and Bamboo), so a
+  value containing `?` or `/` can no longer change which resource a request
+  targets. A value that cannot be a single path segment (empty, `.`, `..` or one
+  containing `/`) is refused with an error before the write request is sent. This
+  includes the Jira and Confluence attachment uploads, which do not go through
+  the central path check, and `opsgenie heartbeat get`, where a name ending in
+  `/ping` reached the ping endpoint. Bitbucket workspace and repository names
+  detected from git remotes are validated and ignored when they use characters
+  outside the Bitbucket name set, or when the remote URL has a query, a
+  fragment or a dot segment. (#178)
+
+### Changed
+
+- **Breaking:** `confluence bulk delete` now only lists the matching pages (ID
+  and title) and deletes nothing unless it gets `--execute`. With `--execute`
+  it asks you to type the number of matched pages, and without a terminal it
+  refuses instead of deleting. Scripts that relied on the old behaviour must now
+  pass `--execute --yes`. `--yes` only skips the typed confirmation and has no
+  effect without `--execute`. `--dry-run` is hidden and deprecated: it behaves
+  like the new default and is rejected together with `--execute`. Deleted pages
+  go to the Confluence trash, and a run covers at most the first 1000 matches.
+  (#176)
+
+- **Breaking:** `jira bulk transition`, `jira bulk assign` and `jira bulk label` no
+  longer change issues as soon as they run. They list the matching issues by default
+  (for `transition`, with the transition and target status each issue would get).
+  `--execute` applies the change, after you type the number of matching issues, or
+  pass `--yes` to skip the prompt. Without a terminal and without `--yes`,
+  `--execute` refuses. Scripts must now pass `--execute --yes`. `--dry-run` is
+  hidden and deprecated: it still lists only and cannot be combined with
+  `--execute`. `--labels` is now required and needs at least one non-empty label
+  for every action, so `jira bulk label --action set` without labels, which cleared
+  all labels on every match, is rejected. `remove` is unchanged and can still empty
+  the labels of an issue by removing all of them. (#177)
+
+### Fixed
+
+- `jira bulk transition` resolves the transition per issue. Before, the transition
+  ID found on the first matching issue was sent to every issue, so issues from other
+  workflows could be moved with a different transition or fail. A name is matched on
+  each issue. Multiple matching names on one issue are rejected as ambiguous
+  instead of selecting by response order. An ID is applied only where it has the same name as on the first
+  issue. An issue that does not offer the transition is reported with its key and
+  left unchanged, the other issues are still processed, and the command exits with
+  an error. (#177)
+
 ## [0.12.0] - 2026-10-16
 
 One feature, from a user report: Jira comments can be restricted to a project
@@ -570,7 +621,8 @@ in scripts.
 First release: a Rust CLI for Jira, Confluence and Bitbucket, distributed through
 cargo-dist with a Homebrew tap and a shell installer.
 
-[Unreleased]: https://github.com/omar16100/atlassian-cli/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/omar16100/atlassian-cli/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/omar16100/atlassian-cli/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/omar16100/atlassian-cli/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/omar16100/atlassian-cli/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/omar16100/atlassian-cli/compare/v0.9.3...v0.10.0

@@ -433,7 +433,11 @@ pub async fn create_pull_request(
         payload["reviewers"] = serde_json::json!(reviewer_objs);
     }
 
-    let path = format!("/2.0/repositories/{workspace}/{repo_slug}/pullrequests");
+    let path = format!(
+        "/2.0/repositories/{}/{}/pullrequests",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
+    );
     let pr: PullRequest = ctx
         .client
         .post(&path, &payload)
@@ -588,7 +592,11 @@ pub async fn update_pull_request(
         anyhow::bail!("Nothing to update: pass --title, --description or --reviewers.");
     }
 
-    let path = format!("/2.0/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}");
+    let path = format!(
+        "/2.0/repositories/{}/{}/pullrequests/{pr_id}",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
+    );
     let current: PullRequest = ctx.client.get(&path).await.with_context(|| {
         format!("Failed to fetch pull request {pr_id} from {workspace}/{repo_slug}")
     })?;
@@ -670,7 +678,11 @@ pub async fn merge_pull_request(
         payload["message"] = serde_json::json!(msg);
     }
 
-    let path = format!("/2.0/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/merge");
+    let path = format!(
+        "/2.0/repositories/{}/{}/pullrequests/{pr_id}/merge",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
+    );
     let pr: PullRequest = ctx.client.post(&path, &payload).await.with_context(|| {
         format!("Failed to merge pull request {pr_id} in {workspace}/{repo_slug}")
     })?;
@@ -708,7 +720,11 @@ pub async fn decline_pull_request(
     repo_slug: &str,
     pr_id: i64,
 ) -> Result<()> {
-    let path = format!("/2.0/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/decline");
+    let path = format!(
+        "/2.0/repositories/{}/{}/pullrequests/{pr_id}/decline",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
+    );
     let pr: PullRequest = ctx
         .client
         .post(&path, &serde_json::json!({}))
@@ -856,7 +872,11 @@ pub async fn add_pr_comment(
 ) -> Result<()> {
     let payload = comment_payload(content, parent, inline_path, inline_line, side);
 
-    let path = format!("/2.0/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments");
+    let path = format!(
+        "/2.0/repositories/{}/{}/pullrequests/{pr_id}/comments",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
+    );
     let comment: Comment = ctx.client.post(&path, &payload).await.with_context(|| {
         format!("Failed to add comment to pull request {pr_id} in {workspace}/{repo_slug}")
     })?;
@@ -890,7 +910,9 @@ pub async fn resolve_pr_comment(
     comment_id: i64,
 ) -> Result<()> {
     let path = format!(
-        "/2.0/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments/{comment_id}/resolve"
+        "/2.0/repositories/{}/{}/pullrequests/{pr_id}/comments/{comment_id}/resolve",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
     );
     let _: serde_json::Value = ctx
         .client
@@ -921,7 +943,9 @@ pub async fn reopen_pr_comment(
     comment_id: i64,
 ) -> Result<()> {
     let path = format!(
-        "/2.0/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments/{comment_id}/resolve"
+        "/2.0/repositories/{}/{}/pullrequests/{pr_id}/comments/{comment_id}/resolve",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
     );
     ctx.client
         .delete_no_content(&path)
@@ -1018,7 +1042,11 @@ pub async fn add_pr_reviewers(
     pr_id: i64,
     reviewers: Vec<String>,
 ) -> Result<()> {
-    let path = format!("/2.0/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}");
+    let path = format!(
+        "/2.0/repositories/{}/{}/pullrequests/{pr_id}",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
+    );
     let pr: PullRequest = ctx.client.get(&path).await.with_context(|| {
         format!("Failed to fetch pull request {pr_id} from {workspace}/{repo_slug}")
     })?;

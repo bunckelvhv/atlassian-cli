@@ -21,6 +21,8 @@ mod webhooks;
 // reimplementing the bearer/basic split.
 pub(crate) mod workspaces;
 
+#[cfg(test)]
+mod path_encoding_tests;
 use utils::BitbucketContext;
 
 /// Resolve pipeline ID from positional arg or --pipeline flag.

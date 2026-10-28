@@ -13,6 +13,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -597,7 +598,8 @@ pub async fn upload_attachments(
         .client
         .http_client()
         .post(format!(
-            "{base_url}/rest/api/3/issue/{issue_key}/attachments"
+            "{base_url}/rest/api/3/issue/{}/attachments",
+            encode_path_segment(issue_key)?
         ))
         .multipart(form)
         // Required by Jira to opt out of its XSRF check.
@@ -655,7 +657,10 @@ pub async fn delete_attachment(
     }
 
     ctx.client
-        .delete_no_content(&format!("/rest/api/3/attachment/{attachment_id}"))
+        .delete_no_content(&format!(
+            "/rest/api/3/attachment/{}",
+            encode_path_segment(attachment_id)?
+        ))
         .await
         .with_context(|| format!("Failed to delete attachment {attachment_id}"))?;
 

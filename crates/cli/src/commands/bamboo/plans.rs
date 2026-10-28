@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::Serialize;
 
 use super::utils::{BambooContext, ListResponse, Plan, PlansWrapper};
@@ -89,7 +90,7 @@ pub async fn get_plan(ctx: &BambooContext<'_>, key: &str) -> Result<()> {
 
 /// Enable a plan.
 pub async fn enable_plan(ctx: &BambooContext<'_>, key: &str) -> Result<()> {
-    let path = format!("/rest/api/latest/plan/{}/enable", key);
+    let path = format!("/rest/api/latest/plan/{}/enable", encode_path_segment(key)?);
 
     tracing::debug!("Enabling plan {}", key);
     ctx.client
@@ -104,7 +105,10 @@ pub async fn enable_plan(ctx: &BambooContext<'_>, key: &str) -> Result<()> {
 
 /// Disable a plan.
 pub async fn disable_plan(ctx: &BambooContext<'_>, key: &str) -> Result<()> {
-    let path = format!("/rest/api/latest/plan/{}/disable", key);
+    let path = format!(
+        "/rest/api/latest/plan/{}/disable",
+        encode_path_segment(key)?
+    );
 
     tracing::debug!("Disabling plan {}", key);
     ctx.client
@@ -119,7 +123,10 @@ pub async fn disable_plan(ctx: &BambooContext<'_>, key: &str) -> Result<()> {
 
 /// Favorite a plan.
 pub async fn favorite_plan(ctx: &BambooContext<'_>, key: &str) -> Result<()> {
-    let path = format!("/rest/api/latest/plan/{}/favourite", key);
+    let path = format!(
+        "/rest/api/latest/plan/{}/favourite",
+        encode_path_segment(key)?
+    );
 
     tracing::debug!("Favoriting plan {}", key);
     ctx.client
@@ -134,7 +141,10 @@ pub async fn favorite_plan(ctx: &BambooContext<'_>, key: &str) -> Result<()> {
 
 /// Unfavorite a plan.
 pub async fn unfavorite_plan(ctx: &BambooContext<'_>, key: &str) -> Result<()> {
-    let path = format!("/rest/api/latest/plan/{}/favourite", key);
+    let path = format!(
+        "/rest/api/latest/plan/{}/favourite",
+        encode_path_segment(key)?
+    );
 
     tracing::debug!("Unfavoriting plan {}", key);
     ctx.client

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
 use serde::{Deserialize, Serialize};
 
 use super::utils::{Approval, JsmContext};
@@ -115,7 +116,10 @@ pub async fn answer_approval(
         decision: String,
     }
 
-    let path = format!("/rest/servicedeskapi/request/{key}/approval/{approval_id}");
+    let path = format!(
+        "/rest/servicedeskapi/request/{}/approval/{approval_id}",
+        encode_path_segment(key)?
+    );
     let decision = if approve { "approve" } else { "decline" };
     let body = ApprovalAnswer {
         decision: decision.to_string(),

@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use atlassian_cli_api::path::encode_path_segment;
+use atlassian_cli_api::query::encode_query_component;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -60,7 +62,11 @@ pub async fn add_role_actor(
     let _: Value = ctx
         .client
         .post(
-            &format!("/rest/api/3/project/{project}/role/{role_id}"),
+            &format!(
+                "/rest/api/3/project/{}/role/{}",
+                encode_path_segment(project)?,
+                encode_path_segment(role_id)?
+            ),
             &payload,
         )
         .await
@@ -83,7 +89,10 @@ pub async fn remove_role_actor(
     let _: Value = ctx
         .client
         .delete(&format!(
-            "/rest/api/3/project/{project}/role/{role_id}?user={user}"
+            "/rest/api/3/project/{}/role/{}?user={}",
+            encode_path_segment(project)?,
+            encode_path_segment(role_id)?,
+            encode_query_component(user)
         ))
         .await
         .with_context(|| format!("Failed to remove actor from role {role_id}"))?;
@@ -184,7 +193,7 @@ pub async fn create_field(
 pub async fn delete_field(ctx: &JiraContext<'_>, id: &str) -> Result<()> {
     let _: Value = ctx
         .client
-        .delete(&format!("/rest/api/3/field/{id}"))
+        .delete(&format!("/rest/api/3/field/{}", encode_path_segment(id)?))
         .await
         .with_context(|| format!("Failed to delete field {id}"))?;
 

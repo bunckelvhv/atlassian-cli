@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use super::super::utils::BitbucketContext;
+use super::super::utils::{encode_path_segment, BitbucketContext};
 use super::list::{fetch_pipeline, resolve_pipeline_id};
 use super::model::{Pipeline, PipelineVariable};
 use super::state::get_pipeline_status;
@@ -88,7 +88,11 @@ pub async fn trigger_pipeline(
 
     let payload = build_trigger_payload(ref_name, ref_type, custom_pipeline.as_deref(), &variables);
 
-    let path = format!("/2.0/repositories/{workspace}/{repo_slug}/pipelines/");
+    let path = format!(
+        "/2.0/repositories/{}/{}/pipelines/",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
+    );
     let pipeline: Pipeline = ctx.client.post(&path, &payload).await.with_context(|| {
         format!("Failed to trigger pipeline for {ref_name} on {workspace}/{repo_slug}")
     })?;
@@ -131,8 +135,12 @@ pub async fn stop_pipeline(
     repo_slug: &str,
     pipeline_uuid: &str,
 ) -> Result<()> {
-    let path =
-        format!("/2.0/repositories/{workspace}/{repo_slug}/pipelines/{pipeline_uuid}/stopPipeline");
+    let path = format!(
+        "/2.0/repositories/{}/{}/pipelines/{}/stopPipeline",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?,
+        encode_path_segment(pipeline_uuid)?
+    );
     let _: serde_json::Value = ctx
         .client
         .post(&path, &serde_json::json!({}))
@@ -222,7 +230,11 @@ pub async fn rerun_pipeline(
     }
 
     // Trigger new pipeline
-    let path = format!("/2.0/repositories/{workspace}/{repo_slug}/pipelines/");
+    let path = format!(
+        "/2.0/repositories/{}/{}/pipelines/",
+        encode_path_segment(workspace)?,
+        encode_path_segment(repo_slug)?
+    );
     let new_pipeline: Pipeline = ctx.client.post(&path, &payload).await.with_context(|| {
         format!("Failed to re-run pipeline {pipeline_id} on {workspace}/{repo_slug}")
     })?;

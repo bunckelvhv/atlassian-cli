@@ -14,6 +14,9 @@ mod plans;
 mod projects;
 pub mod utils;
 
+#[cfg(test)]
+mod path_encoding_tests;
+
 pub use utils::BambooContext;
 
 #[derive(Args, Debug, Clone)]
